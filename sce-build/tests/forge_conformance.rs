@@ -12502,20 +12502,21 @@ fn forge_rust_pure_kind_functions_are_inline() {
     const TRANSFORM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="transform" name="transform_calls_out">
-  <sce:import src="transform_multi_output.scxml" kind="transform" as="toF"/>
+  <sce:import src="transform_int_rem.scxml" kind="transform" as="remOf"/>
   <datamodel>
-    <data id="celsius" sce:type="float64" sce:direction="in"/>
-    <data id="halved" sce:type="float64" sce:direction="out" expr="celsius / 2"/>
-    <data id="doubled" sce:type="float64" sce:direction="out" expr="halved * 4"/>
-    <data id="warmer" sce:type="float64" sce:direction="out" expr="toF(celsius) + 1"/>
+    <data id="dividend" sce:type="int32" sce:direction="in"/>
+    <data id="divisor" sce:type="int32" sce:direction="in"/>
+    <data id="remainder" sce:type="int32" sce:direction="out" expr="dividend % divisor"/>
+    <data id="again" sce:type="int32" sce:direction="out" expr="remainder % divisor"/>
+    <data id="swapped" sce:type="int32" sce:direction="out" expr="remOf(divisor, dividend)"/>
   </datamodel>
 </scxml>
 "#;
     let transform = render_rust_document("transform_calls_out", TRANSFORM);
     for (function, leaf) in [
-        ("compute_halved", true),
-        ("compute_doubled", false),
-        ("compute_warmer", false),
+        ("compute_remainder", true),
+        ("compute_again", false),
+        ("compute_swapped", false),
     ] {
         assert_eq!(
             rust_line_before_fn("transform_calls_out", &transform, function) == Some("#[inline]"),
@@ -12527,10 +12528,12 @@ fn forge_rust_pure_kind_functions_are_inline() {
     const CONDITION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="condition" name="condition_calls_out">
-  <sce:import src="transform_multi_output.scxml" kind="transform" as="toF"/>
+  <sce:import src="transform_int_rem.scxml" kind="transform" as="remOf"/>
   <datamodel>
-    <data id="celsius" sce:type="float64" sce:direction="in"/>
-    <data id="result" sce:type="bool" sce:direction="out" expr="toF(celsius) &gt; 100"/>
+    <data id="dividend" sce:type="int32" sce:direction="in"/>
+    <data id="divisor" sce:type="int32" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out"
+          expr="remOf(dividend, divisor) &gt; 0"/>
   </datamodel>
 </scxml>
 "#;
