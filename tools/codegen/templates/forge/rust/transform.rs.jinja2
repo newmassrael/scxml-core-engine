@@ -37,9 +37,13 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
-{# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
-   function carries it (algorithm.rs.jinja2 says why). #}
+{# `#[inline]`: the hint C11's `static inline` gives, on a leaf, as an
+   algorithm's function carries it (algorithm.rs.jinja2 says why). An output
+   that reads a sibling calls the sibling's function, and one that calls an
+   imported function calls that one, so neither is a leaf. #}
+{% if func.inline_hint %}
 #[inline]
+{% endif %}
 pub fn {{ func.name }}({{ func.params }}) -> {{ func.ret_type }} {
     {{ func.expr }}
 }

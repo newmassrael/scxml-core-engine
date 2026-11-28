@@ -23,7 +23,9 @@ pub enum {{ enum_name }} {
 }
 
 {# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
-   function carries it (algorithm.rs.jinja2 says why). #}
+   function carries it on a leaf (algorithm.rs.jinja2 says why). A lookup's
+   function is always a leaf: its body is a `match` or the runtime's lookup,
+   and calls no function a document generates. #}
 #[inline]
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Option<{{ enum_name }}>{% else %}{{ enum_name }}{% endif %} {
     match {{ input_id }} {
@@ -40,7 +42,9 @@ const KEYS: [{{ input_type }}; {{ n }}] = [{{ keys_literal | join(", ") }}];
 const VALUES: [{{ value_type }}; {{ n }}] = [{{ values_literal | join(", ") }}];
 
 {# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
-   function carries it (algorithm.rs.jinja2 says why). #}
+   function carries it on a leaf (algorithm.rs.jinja2 says why). A lookup's
+   function is always a leaf: its body is a `match` or the runtime's lookup,
+   and calls no function a document generates. #}
 {% if on_miss_error %}
 #[inline]
 pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> Option<{{ value_type }}> {

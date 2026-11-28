@@ -12414,15 +12414,52 @@ fn forge_rust_condition_range() {
     assert_standalone_forge_rust("condition_range", "condition_range.rs");
 }
 
-// ── Every free function of a pure kind is `#[inline]` (Rust) ───────────
+// ── A leaf free function of a pure kind is `#[inline]` (Rust) ──────────
+
+/// The line before `pub fn {function}(` in `text`, the Rust `document`
+/// generated: the last of the function's attributes, if it has any.
+fn rust_line_before_fn<'a>(document: &str, text: &'a str, function: &str) -> Option<&'a str> {
+    let lines: Vec<&str> = text.lines().collect();
+    let declared = format!("pub fn {function}(");
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with(&declared))
+        .unwrap_or_else(|| panic!("{document}: no `{declared}` line:\n{text}"));
+    at.checked_sub(1).map(|before| lines[before])
+}
+
+/// The Rust the forge document `content`, labelled `name`, generates, with
+/// its imports read from the conformance resources.
+fn render_rust_document(name: &str, content: &str) -> String {
+    sce_build::compile_forge_with_imports(
+        content,
+        sce_build::DocumentLabel::symmetric(name),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("Forge codegen failed for {name}: {e}"))
+    .files
+    .remove(0)
+    .1
+}
 
 /// The free function an algorithm, a transform, a condition or a lookup
-/// generates for Rust carries `#[inline]` on the line before it, the hint C11's
-/// `static inline` gives the same function, and never `#[inline(always)]`: the
-/// compiler keeps the choice. One document of each shape a template writes such
+/// generates for Rust carries `#[inline]` on the line before it when it is a
+/// leaf, one that calls no function a document generates: the hint C11's
+/// `static inline` gives the same function, and never `#[inline(always)]`, so
+/// the compiler keeps the choice. One leaf of each shape a template writes such
 /// a function in: an algorithm that cannot fail and one that can, a transform of
 /// two outputs, a condition, and a lookup to an enum, through a table to a value
 /// that may be missing, and through a table with a default.
+///
+/// A function that calls another generated one carries no hint, since hinting a
+/// caller and its callees alike lets every crate that calls the caller copy both
+/// (SCE_FORGE.md §4.12): an algorithm that calls the one it imports by a
+/// statement and by expressions (`algorithm_checked_call`, whose callee
+/// `algorithm_checked_arith` is a leaf above); a transform's output that reads a
+/// sibling and one that calls an imported transform, beside a leaf output; and a
+/// condition that calls an imported transform.
 #[test]
 fn forge_rust_pure_kind_functions_are_inline() {
     for (document, functions) in [
@@ -12438,15 +12475,9 @@ fn forge_rust_pure_kind_functions_are_inline() {
         ("lookup_severity_default", &["lookup_severity"][..]),
     ] {
         let text = render_golden_rust(document);
-        let lines: Vec<&str> = text.lines().collect();
         for function in functions {
-            let declared = format!("pub fn {function}(");
-            let at = lines
-                .iter()
-                .position(|line| line.starts_with(&declared))
-                .unwrap_or_else(|| panic!("{document}: no `{declared}` line:\n{text}"));
             assert_eq!(
-                at.checked_sub(1).map(|before| lines[before]),
+                rust_line_before_fn(document, &text, function),
                 Some("#[inline]"),
                 "{document}: `{function}` is not `#[inline]`:\n{text}"
             );
@@ -12456,6 +12487,59 @@ fn forge_rust_pure_kind_functions_are_inline() {
             "{document}: a function is forced inline:\n{text}"
         );
     }
+
+    let caller = render_golden_rust("algorithm_checked_call");
+    assert_ne!(
+        rust_line_before_fn("algorithm_checked_call", &caller, "algorithm_checked_call"),
+        Some("#[inline]"),
+        "an algorithm that calls another is hinted inline:\n{caller}"
+    );
+    assert!(
+        !caller.lines().any(|line| line.starts_with("#[inline")),
+        "an algorithm that calls another carries an inline hint:\n{caller}"
+    );
+
+    const TRANSFORM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="transform_calls_out">
+  <sce:import src="transform_multi_output.scxml" kind="transform" as="toF"/>
+  <datamodel>
+    <data id="celsius" sce:type="float64" sce:direction="in"/>
+    <data id="halved" sce:type="float64" sce:direction="out" expr="celsius / 2"/>
+    <data id="doubled" sce:type="float64" sce:direction="out" expr="halved * 4"/>
+    <data id="warmer" sce:type="float64" sce:direction="out" expr="toF(celsius) + 1"/>
+  </datamodel>
+</scxml>
+"#;
+    let transform = render_rust_document("transform_calls_out", TRANSFORM);
+    for (function, leaf) in [
+        ("compute_halved", true),
+        ("compute_doubled", false),
+        ("compute_warmer", false),
+    ] {
+        assert_eq!(
+            rust_line_before_fn("transform_calls_out", &transform, function) == Some("#[inline]"),
+            leaf,
+            "transform_calls_out: `{function}` is hinted inline only if it is a leaf ({leaf}):\n{transform}"
+        );
+    }
+
+    const CONDITION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="condition" name="condition_calls_out">
+  <sce:import src="transform_multi_output.scxml" kind="transform" as="toF"/>
+  <datamodel>
+    <data id="celsius" sce:type="float64" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out" expr="toF(celsius) &gt; 100"/>
+  </datamodel>
+</scxml>
+"#;
+    let condition = render_rust_document("condition_calls_out", CONDITION);
+    assert_ne!(
+        rust_line_before_fn("condition_calls_out", &condition, "condition_calls_out"),
+        Some("#[inline]"),
+        "a condition that calls a transform is hinted inline:\n{condition}"
+    );
 }
 
 // ── Codec (Rust) ─────────────────────────────────────────────

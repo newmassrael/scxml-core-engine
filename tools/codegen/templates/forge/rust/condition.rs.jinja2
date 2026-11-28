@@ -24,9 +24,12 @@
     clippy::comparison_to_empty,
     clippy::manual_range_contains
 )]
-{# `#[inline]`: the hint C11's `static inline` gives, as an algorithm's
-   function carries it (algorithm.rs.jinja2 says why). #}
+{# `#[inline]`: the hint C11's `static inline` gives, on a leaf, as an
+   algorithm's function carries it (algorithm.rs.jinja2 says why). A condition
+   that calls an imported function is no leaf. #}
+{% if inline_hint %}
 #[inline]
+{% endif %}
 pub fn {{ func_name }}({{ params }}) -> bool {
     {{ expr }}
 }

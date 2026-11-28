@@ -1390,6 +1390,37 @@ impl ImportContext {
     pub fn is_callable_algorithm(&self) -> bool {
         self.kind == "algorithm" && !self.qualified_call.is_empty()
     }
+
+    /// Whether a call can reach this import as a function another document
+    /// generates: an algorithm, a transform, a condition, a lookup or an
+    /// interpolation whose call was resolved (`qualified_call`,
+    /// [`StatelessFunction`]). A stateful import is reached through its
+    /// members, and one that declares a type is called by nothing.
+    pub fn is_callable_function(&self) -> bool {
+        !self.qualified_call.is_empty()
+    }
+}
+
+/// Whether a function whose body reads the names `reads` calls no function
+/// another forge document generates: none of them is the alias of an import a
+/// call reaches as one ([`ImportContext::is_callable_function`]). A name spelled
+/// like an alias is that alias, since a local may not reuse one
+/// ([`crate::forge::namespace`]).
+///
+/// What a Rust pure kind's free function is hinted `#[inline]` by (SCE_FORGE.md
+/// §4.12): a leaf is, and a function that calls another generated function is
+/// left to the compiler. Hinting a caller and its callees alike lets every crate
+/// that calls the caller copy both, and a large caller grows the code the hint
+/// was meant to shrink.
+fn calls_no_generated_function<'a>(
+    reads: impl IntoIterator<Item = &'a str>,
+    imports: &[ImportContext],
+) -> bool {
+    reads.into_iter().all(|name| {
+        !imports
+            .iter()
+            .any(|imp| imp.alias == name && imp.is_callable_function())
+    })
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -2648,6 +2679,14 @@ fn render_transform(
 
     let type_ctx = crate::forge::type_ctx::transform(m, &cells, imports);
 
+    // Whether an output reads another output, which is lowered to a call of
+    // that output's function (below), `now` being what it reads this
+    // activation ([`crate::forge::previous_value::Reads::now`]).
+    let reads_a_sibling = |out: &ForgeField, now: &[String]| -> bool {
+        now.iter()
+            .any(|n| *n != out.id && m.outputs.iter().any(|o| o.id == *n))
+    };
+
     // ── A parameter an output does not read is unread ON PURPOSE ──
     //
     // Every output function takes the same parameters, so that the sibling
@@ -2667,11 +2706,7 @@ fn render_transform(
     let params_read = |out: &ForgeField| -> Option<std::collections::HashSet<String>> {
         let reads =
             crate::forge::previous_value::reads(out.expr.as_deref().unwrap_or("0"))?.ok()?;
-        let reads_a_sibling = reads
-            .now
-            .iter()
-            .any(|n| *n != out.id && m.outputs.iter().any(|o| o.id == *n));
-        if reads_a_sibling {
+        if reads_a_sibling(out, reads.now.as_slice()) {
             return None;
         }
         Some(
@@ -2686,6 +2721,24 @@ fn render_transform(
                 )
                 .collect(),
         )
+    };
+
+    // ── A leaf output is hinted inline (Rust) ─────────────────────
+    //
+    // An output's function is hinted `#[inline]` in Rust when it calls no
+    // function a document generates (SCE_FORGE.md §4.12): it reads no
+    // sibling, a read lowered to a call of the sibling's function (below),
+    // and calls no function an import generates. An expression that does
+    // not parse was refused before rendering, and is no leaf here.
+    let output_is_leaf = |out: &ForgeField| -> bool {
+        let text = out.expr.as_deref().unwrap_or("0");
+        let Some(Ok(reads)) = crate::forge::previous_value::reads(text) else {
+            return false;
+        };
+        !reads_a_sibling(out, reads.now.as_slice())
+            && expr::read_identifiers(text).is_ok_and(|names| {
+                calls_no_generated_function(names.iter().map(String::as_str), imports)
+            })
     };
 
     // ── A sibling output is a CALL, not a bare name ───────────────
@@ -2844,6 +2897,7 @@ fn render_transform(
             obj.insert("params".into(), params.into());
             obj.insert("unread".into(), unread.into());
             obj.insert("expr".into(), expr_val.into());
+            obj.insert("inline_hint".into(), output_is_leaf(out).into());
             if matches!(lang, Language::Go) {
                 obj.insert("orig_name".into(), out.id.clone().into());
             }
@@ -11329,6 +11383,16 @@ fn render_condition(
         .into(),
     );
     ctx.insert("expr".into(), expr_val.into());
+    // A condition that calls no function a document generates is hinted
+    // inline in Rust (SCE_FORGE.md §4.12).
+    ctx.insert(
+        "inline_hint".into(),
+        expr::read_identifiers(site.source)
+            .is_ok_and(|names| {
+                calls_no_generated_function(names.iter().map(String::as_str), imports)
+            })
+            .into(),
+    );
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "condition", ctx)
@@ -51893,9 +51957,12 @@ fn render_algorithm(
         },
         body_indent,
     )?;
+    // The names the body reads: which parameters it never reads, and whether it
+    // calls a function another document generates.
+    let body_reads = crate::forge::algorithm_reads::names_read(&m.body);
     // A parameter nothing reads is unread on purpose, as a local is; Go and Swift
     // say nothing of one, and Kotlin's compiler no longer does.
-    let body = match crate::forge::algorithm_reads::names_read(&m.body) {
+    let body = match &body_reads {
         Some(reads) if matches!(lang, Language::Rust | Language::Cpp | Language::C11) => {
             let pad = "    ".repeat(body_indent);
             let said: String = m
@@ -51935,6 +52002,18 @@ fn render_algorithm(
     // instead of selecting a casing per backend. The module identity vars
     // (`namespace` / `package`) come from `base_context` and are unaffected.
     ctx.insert("primary_symbol".into(), primary_symbol.into());
+    // A leaf, a function that calls no algorithm or other function a document
+    // generates, is hinted inline in Rust (SCE_FORGE.md §4.12). A body whose
+    // expression does not parse (`None`) was refused where it was lowered.
+    ctx.insert(
+        "inline_hint".into(),
+        body_reads
+            .as_ref()
+            .is_some_and(|reads| {
+                calls_no_generated_function(reads.iter().map(String::as_str), imports)
+            })
+            .into(),
+    );
     // The bound of each map a Rust algorithm is lent, which its caller's
     // variable states (docs/adr/0108, D5); nothing for any other algorithm.
     ctx.insert(
