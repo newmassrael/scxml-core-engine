@@ -154,13 +154,12 @@
 mod slot;
 
 /// The locks and the flags that decide who holds a session's slot, and when
-/// (the model `SessionPool`): the table, each slot's inbox, `live` and lease
-/// locks, and the stop's flags.
-///
-/// The `Arc` the table shares a slot by stays `std`'s: its count decides only
-/// when a slot's memory is freed, never who holds the slot, and a followed
-/// journal's reader keeps a `Weak` of the slot it handed an entry to
-/// (module `follow`), which loom's `Arc` has none of.
+/// (the model `SessionPool`): the table, the `Arc` it shares each slot by,
+/// each slot's inbox, `live` and lease locks, the lock of the journals'
+/// reader, which holds the table while it hands an entry, and the stop's
+/// flags. A slot is told apart from another by its serial, never by its
+/// `Arc`, so what the loom models explore of a slot's sharing is the text that
+/// ships: who clones it out of the table, and when its last holder lets it go.
 ///
 /// A build gets `std`'s and `core`'s. The loom models (`loom_models` in the
 /// tests below) build the crate's tests under `--cfg loom` and get loom's,
@@ -173,12 +172,12 @@ mod sync {
     #[cfg(all(loom, test))]
     pub(super) use loom::sync::atomic::AtomicBool;
     #[cfg(all(loom, test))]
-    pub(super) use loom::sync::{Mutex, MutexGuard};
+    pub(super) use loom::sync::{Arc, Mutex, MutexGuard};
 
     #[cfg(not(all(loom, test)))]
     pub(super) use core::sync::atomic::AtomicBool;
     #[cfg(not(all(loom, test)))]
-    pub(super) use std::sync::{Mutex, MutexGuard};
+    pub(super) use std::sync::{Arc, Mutex, MutexGuard};
 
     /// Let another thread go on while this one waits for a lock it holds: a
     /// sleep of a millisecond, and under loom a yield, which is how loom lets
@@ -528,7 +527,7 @@ impl Receipt {
 type Replies = Arc<Mutex<BTreeMap<[u8; 16], String>>>;
 
 /// A session's slot as the table and each call that acts on it share it.
-type SharedSlot<M, T, E> = Arc<Slot<M, T, E>>;
+type SharedSlot<M, T, E> = sync::Arc<Slot<M, T, E>>;
 
 /// Every session the pool holds, in memory or about to be, by key.
 type Table<M, T, E> = BTreeMap<String, SharedSlot<M, T, E>>;
@@ -888,7 +887,7 @@ where
     /// The store the journals the machine follows are read from
     /// ([`Pool::follow_from`], docs/adr/0114, D4), and what its reader holds.
     journal: Option<Arc<dyn JournalStore>>,
-    reader: Mutex<follow::Reader>,
+    reader: sync::Mutex<follow::Reader>,
     /// The reader's mark as the store last kept it (docs/adr/0116, D5): every entry at or below it
     /// was taken in by a durable checkpoint of its session. An envelope that carries a position
     /// at or below it is taken at once; one above it waits. Only rises.
@@ -1064,7 +1063,7 @@ where
             stopped: sync::AtomicBool::new(false),
             slots_made: AtomicU64::new(0),
             journal: None,
-            reader: Mutex::new(follow::Reader::new()),
+            reader: sync::Mutex::new(follow::Reader::new()),
             read_mark: AtomicU64::new(0),
             awaiting: Mutex::new(BTreeSet::new()),
         })
@@ -1990,7 +1989,7 @@ where
             return match slot::admission(stopping, Some(inbox.door), live, max_live, max_inbox) {
                 Ok(door) => {
                     inbox.admitted(door, input);
-                    Ok(Arc::clone(slot))
+                    Ok(sync::Arc::clone(slot))
                 }
                 Err(full) => Err((input, full)),
             };
@@ -1999,7 +1998,7 @@ where
             Ok(door) => {
                 let slot = self.new_slot(key, self.store.indexed(key));
                 hold(&slot.inbox).admitted(door, input);
-                table.insert(key.to_string(), Arc::clone(&slot));
+                table.insert(key.to_string(), sync::Arc::clone(&slot));
                 Ok(slot)
             }
             Err(full) => Err((input, full)),
@@ -2013,7 +2012,7 @@ where
     /// made for a key that left the table is never taken for the one it left.
     fn new_slot(&self, key: &str, indexed: String) -> SharedSlot<F::Machine, T, E> {
         let serial = self.slots_made.fetch_add(1, Ordering::SeqCst) + 1;
-        Arc::new(Slot::new(key, serial, indexed))
+        sync::Arc::new(Slot::new(key, serial, indexed))
     }
 
     /// Save and drop the session that has gone longest without an event and
@@ -2031,7 +2030,7 @@ where
                 .as_ref()
                 .filter(|session| self.is_quiet(&slot, session))
             {
-                quiet.push((session.last_active_ms, Arc::clone(&slot)));
+                quiet.push((session.last_active_ms, sync::Arc::clone(&slot)));
             }
         }
         quiet.sort_by_key(|(last_active_ms, _)| *last_active_ms);

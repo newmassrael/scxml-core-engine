@@ -178,8 +178,9 @@ tokio-rustls = { version = "0.26", default-features = false }
 serde_json = "1"
 
 # The session pool's memory-model checker (docs/adr/0115, D13): present only when the crate's
-# tests are compiled with `--cfg loom`, which swaps the pool's table, slot locks and stop flags for
-# loom's in the models' build of `src/pool.rs`. No ordinary build, and no consumer, ever links it.
+# tests are compiled with `--cfg loom`, which swaps the pool's table, the `Arc` it shares each slot
+# by, the slots' locks, the journals' reader's lock and the stop flags for loom's in the models'
+# build of `src/pool.rs`. No ordinary build, and no consumer, ever links it.
 # The models are among the crate's unit tests, run by name:
 #
 #   cargo test --release -p sce-rust-mesh --target-dir target/loom \

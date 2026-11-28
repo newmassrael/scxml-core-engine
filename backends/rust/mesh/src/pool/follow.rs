@@ -247,7 +247,7 @@ where
         if follows.journals.is_empty() || self.stopping.load(core::sync::atomic::Ordering::SeqCst) {
             return Vec::new();
         }
-        let mut reader = lock(&self.reader);
+        let mut reader = hold(&self.reader);
         if !reader.started {
             match journal.read_through(self.machine.name) {
                 Ok(mark) => {
