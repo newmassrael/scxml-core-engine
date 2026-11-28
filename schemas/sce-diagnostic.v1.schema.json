@@ -300,7 +300,6 @@
         "view/viewer-mismatch",
         "view/expression-may-fail",
         "view/aggregate-may-overflow",
-        "view/floating-aggregate",
         "view/backend-unsupported",
         "codegen/no-std-script-not-supported",
         "codegen/no-std-http-not-supported",

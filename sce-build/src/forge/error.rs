@@ -1661,21 +1661,6 @@ pub enum ValidationError {
         most: String,
     },
 
-    /// docs/adr/0151, D1: a sum, a minimum, a maximum or an order over a
-    /// floating type.
-    ///
-    /// Wire code: `view/floating-aggregate`.
-    #[error(
-        "view '{view}': {what} `{expr}` is over a floating type: its value would depend on the \
-         order the numbers are met in, and a maintained value and a recomputed one would differ \
-         in their bytes (docs/adr/0151, D1)"
-    )]
-    ViewFloatingAggregate {
-        view: String,
-        what: String,
-        expr: String,
-    },
-
     /// docs/adr/0108, D1: a map or a set whose key is no key — a float, an
     /// optional, a union, a list, a map or a set, or a record one of whose
     /// fields, through every record a field names, is none. `value` is the
@@ -7546,14 +7531,14 @@ pub enum GenerateError {
         language: String,
     },
 
-    /// docs/adr/0151, D10 (`view/backend-unsupported`): a view document, read and
+    /// docs/adr/0151, D11 (`view/backend-unsupported`): a view document, read and
     /// checked into its plan, for a backend that does not lower a view. Rust is
     /// the lane, from the plan, once the operators of its forge runtime land;
     /// every other backend and the Interpreter refuse it by name.
     #[error(
         "view '{view}': the {language} backend does not lower a view: a view is lowered by the \
          Rust lane alone, from its plan, over the operators of the Rust forge runtime, and every \
-         other backend and the Interpreter refuse it by name (docs/adr/0151, D10)"
+         other backend and the Interpreter refuse it by name (docs/adr/0151, D11)"
     )]
     ViewBackendUnsupported {
         /// The view's name.

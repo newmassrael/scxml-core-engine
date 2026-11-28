@@ -1830,7 +1830,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "broadcast-log/runtime-missing")]
     BroadcastLogRuntimeMissing,
 
-    // ── The view kind (docs/adr/0151). The refusals of D11 a view's plan
+    // ── The view kind (docs/adr/0151). The refusals of D12 a view's plan
     //    makes, and the refusal of a backend that does not lower one. None
     //    carries a `Fix`: each repair is the author's choice of a key, an
     //    order, a type or a relation. ──
@@ -1865,12 +1865,8 @@ pub enum DiagnosticCode {
     /// (docs/adr/0151, D1).
     #[serde(rename = "view/aggregate-may-overflow")]
     ViewAggregateMayOverflow,
-    /// A sum, a minimum, a maximum or an order of a view over a floating type
-    /// (docs/adr/0151, D1).
-    #[serde(rename = "view/floating-aggregate")]
-    ViewFloatingAggregate,
     /// A valid view document for a backend that does not lower a view
-    /// (docs/adr/0151, D10). `actual` is absent: the language is the target.
+    /// (docs/adr/0151, D11). `actual` is absent: the language is the target.
     #[serde(rename = "view/backend-unsupported")]
     ViewBackendUnsupported,
 
@@ -4506,7 +4502,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         BroadcastLogWrapBoundBelowDeployMinimum,
         BroadcastLogSlotsNotADivisorOfTheStampSpace,
         BroadcastLogRuntimeMissing,
-        // The view kind (docs/adr/0151, D10 and D11)
+        // The view kind (docs/adr/0151, D11 and D12)
         ViewResultKeyNotUnique,
         ViewBoundWithoutOrder,
         ViewCycle,
@@ -4515,7 +4511,6 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ViewViewerMismatch,
         ViewExpressionMayFail,
         ViewAggregateMayOverflow,
-        ViewFloatingAggregate,
         ViewBackendUnsupported,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
@@ -5054,14 +5049,12 @@ impl DiagnosticCode {
             // ── Formal judges (docs/adr/0146) ───────────────────
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
             // ── The view kind (docs/adr/0151) ───────────────────
-            ViewExpressionMayFail | ViewAggregateMayOverflow | ViewFloatingAggregate => {
-                Some("ADR 0151 D1")
-            }
+            ViewExpressionMayFail | ViewAggregateMayOverflow => Some("ADR 0151 D1"),
             ViewResultKeyNotUnique | ViewBoundWithoutOrder => Some("ADR 0151 D2"),
             ViewCycle => Some("ADR 0151 D3"),
             ViewRelationCycleThroughExclusion => Some("ADR 0151 D5"),
             ViewTableWithoutVisibility | ViewViewerMismatch => Some("ADR 0151 D6"),
-            ViewBackendUnsupported => Some("ADR 0151 D10"),
+            ViewBackendUnsupported => Some("ADR 0151 D11"),
             FormalNoTranslation => Some("ADR 0115 D7"),
             FormalIsolation => Some("ADR 0115 D11"),
             FormalPropertyRefused => Some("ADR 0115 D15"),
@@ -6687,7 +6680,6 @@ impl DiagnosticCode {
             | ViewViewerMismatch
             | ViewExpressionMayFail
             | ViewAggregateMayOverflow
-            | ViewFloatingAggregate
             | ViewBackendUnsupported
             | ValidationMigrationChainBroken => DerivationClass::ProductOnly,
         }
@@ -7116,7 +7108,6 @@ impl DiagnosticCode {
             ViewViewerMismatch => "view/viewer-mismatch",
             ViewExpressionMayFail => "view/expression-may-fail",
             ViewAggregateMayOverflow => "view/aggregate-may-overflow",
-            ViewFloatingAggregate => "view/floating-aggregate",
             ViewBackendUnsupported => "view/backend-unsupported",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
@@ -9296,7 +9287,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 field.clone(),
             ],
         },
-        // ── docs/adr/0151, D11: the refusals of a view's plan. Each repair is
+        // ── docs/adr/0151, D12: the refusals of a view's plan. Each repair is
         //    the author's (a key, an order, a type, a relation), so none carries
         //    a `Fix`, and each names what it is about in its message.
         ValidationError::ViewResultKeyNotUnique { view, key, .. } => DiagnosticPayload {
@@ -9364,14 +9355,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![view.clone(), column.clone()],
-        },
-        ValidationError::ViewFloatingAggregate { view, expr, .. } => DiagnosticPayload {
-            code: DiagnosticCode::ViewFloatingAggregate,
-            stage: Stage::Validation,
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![view.clone(), expr.clone()],
         },
         // docs/adr/0108, D1: the type as written is `actual`; which key a
         // table is found by is the author's choice, so neither `expected` nor
@@ -13428,7 +13411,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![log_name.clone(), language.clone()],
         },
-        // docs/adr/0151, D10: the language is the generation target, not a
+        // docs/adr/0151, D11: the language is the generation target, not a
         // token of the document, which is valid as written.
         GenerateError::ViewBackendUnsupported { view, language } => DiagnosticPayload {
             code: DiagnosticCode::ViewBackendUnsupported,
@@ -18363,23 +18346,13 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:bf4d20c13adc36d8","code":"view/aggregate-may-overflow","stage":"validation","spec":"ADR 0151 D1","message":"view 'board': the count 'open' is held in uint8 and may reach 10000, over tasks_max rows: an aggregate is of a type the build proves wide enough from its column's type and its group's largest count (docs/adr/0151, D1)"}"#,
             ),
             (
-                "forge/view-floating-aggregate",
-                ValidationError::ViewFloatingAggregate {
-                    view: "board".into(),
-                    what: "the sum of".into(),
-                    expr: "t.row.hours".into(),
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:7daf6424cd729b3b","code":"view/floating-aggregate","stage":"validation","spec":"ADR 0151 D1","message":"view 'board': the sum of `t.row.hours` is over a floating type: its value would depend on the order the numbers are met in, and a maintained value and a recomputed one would differ in their bytes (docs/adr/0151, D1)"}"#,
-            ),
-            (
                 "forge/view-backend-unsupported",
                 GenerateError::ViewBackendUnsupported {
                     view: "board".into(),
                     language: "cpp".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:911ad5a5216344b9","code":"view/backend-unsupported","stage":"generate","spec":"ADR 0151 D10","message":"view 'board': the cpp backend does not lower a view: a view is lowered by the Rust lane alone, from its plan, over the operators of the Rust forge runtime, and every other backend and the Interpreter refuse it by name (docs/adr/0151, D10)"}"#,
+                r#"{"v":1,"id":"fnv1a:911ad5a5216344b9","code":"view/backend-unsupported","stage":"generate","spec":"ADR 0151 D11","message":"view 'board': the cpp backend does not lower a view: a view is lowered by the Rust lane alone, from its plan, over the operators of the Rust forge runtime, and every other backend and the Interpreter refuse it by name (docs/adr/0151, D11)"}"#,
             ),
             (
                 "forge/queue-segmented-needs-alloc",
@@ -23353,7 +23326,7 @@ mod tests {
             // is what separates them from their sibling above.
             | ValidationDefaultCoversTestedVariant
             | ValidationDefaultCoversNotAValueSpace
-            // docs/adr/0151, D11: each repair is the author's choice of a key,
+            // docs/adr/0151, D12: each repair is the author's choice of a key,
             // an order, a type or a relation, and none is offered.
             | ViewResultKeyNotUnique
             | ViewBoundWithoutOrder
@@ -23363,7 +23336,6 @@ mod tests {
             | ViewViewerMismatch
             | ViewExpressionMayFail
             | ViewAggregateMayOverflow
-            | ViewFloatingAggregate
             | ViewBackendUnsupported => NeutralOrDeterministic,
         }
     }
@@ -24104,7 +24076,6 @@ mod tests {
                 | ViewViewerMismatch
                 | ViewExpressionMayFail
                 | ViewAggregateMayOverflow
-                | ViewFloatingAggregate
                 | ViewBackendUnsupported => true,
             }
         }
@@ -24117,9 +24088,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            596,
+            595,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 596 distinct variants to match the DiagnosticCode \
+             expected 595 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -25294,7 +25265,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ViewViewerMismatch
             | ViewExpressionMayFail
             | ViewAggregateMayOverflow
-            | ViewFloatingAggregate
             | ViewBackendUnsupported => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──

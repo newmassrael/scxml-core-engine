@@ -5353,7 +5353,7 @@ pub fn compile_forge_from_parsed(
 
     // A view is read into its plan, with every view it imports, before the
     // import graph is walked: a cycle of views is refused as one
-    // (`view/cycle`, docs/adr/0151, D3), and every refusal of D11 the
+    // (`view/cycle`, docs/adr/0151, D3), and every refusal of D12 the
     // document's plan gives is given here, once, before any backend is asked,
     // so the verdict does not depend on the language.
     forge::view::check(parsed, base_dir, label.diagnostic_label)?;

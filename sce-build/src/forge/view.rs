@@ -10,14 +10,13 @@
 //! lane that prints the maintenance circuit each take whole, none reading the
 //! document again, so none of them depends on code generation. Every refusal of
 //! the kind that reads more than the document alone is made here, each by its
-//! code (D11): a result key the build does not infer, a cut with no order, a
+//! code (D12): a result key the build does not infer, a cut with no order, a
 //! cycle of views, a relation that depends on its own exclusion, a table that
 //! says nobody may read it, a view that reads rows its viewer may not, an
-//! expression the build does not prove total, an aggregate its type may not
-//! hold, and an aggregate or an order over floating numbers. The parser holds the
-//! document to its shape first ([`crate::forge::parser`]).
+//! expression the build does not prove total, and an aggregate its type may not
+//! hold. The parser holds the document to its shape first ([`crate::forge::parser`]).
 //!
-//! No backend lowers a view yet: Rust is its lane (D10), from this plan, once
+//! No backend lowers a view yet: Rust is its lane (D11), from this plan, once
 //! the operators of its forge runtime land, and every other backend and the
 //! Interpreter refuse it by name ([`backend_unsupported`]).
 
@@ -71,7 +70,7 @@ pub fn check(
     plan(parsed, base_dir, document).map(|_| ())
 }
 
-/// The refusal of a view document on `language` (docs/adr/0151, D10):
+/// The refusal of a view document on `language` (docs/adr/0151, D11):
 /// `view/backend-unsupported`, by name, after the document is read and its plan
 /// made.
 pub fn backend_unsupported(view: &ViewModel, language: Language) -> GenerateError {

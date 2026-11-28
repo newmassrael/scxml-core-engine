@@ -11788,7 +11788,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (596 codes)
+## Appendix — `DiagnosticCode` index (595 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -12101,7 +12101,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `view/viewer-mismatch` | Validation |
 | `view/expression-may-fail` | Validation |
 | `view/aggregate-may-overflow` | Validation |
-| `view/floating-aggregate` | Validation |
 | `view/backend-unsupported` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |

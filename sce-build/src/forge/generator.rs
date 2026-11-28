@@ -2585,7 +2585,7 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(
@@ -30480,7 +30480,7 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(crate::forge::view::backend_unsupported(
@@ -30747,7 +30747,7 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(crate::forge::view::backend_unsupported(
@@ -35340,7 +35340,7 @@ pub fn generate_go_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(
@@ -35656,7 +35656,7 @@ pub fn generate_python_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(crate::forge::view::backend_unsupported(
@@ -35943,7 +35943,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => None,
-        // docs/adr/0151, D10: a view is refused by name on every backend but its
+        // docs/adr/0151, D11: a view is refused by name on every backend but its
         // lane.
         ForgeDocument::View(m) => {
             return Err(crate::forge::view::backend_unsupported(m, Language::Swift).into())
@@ -36986,7 +36986,7 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
-        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // docs/adr/0151, D11: a view is read and checked into its plan, and
         // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
         ForgeDocument::View(m) => {
             return Err(

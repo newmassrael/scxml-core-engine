@@ -154,7 +154,7 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // docs/adr/0115, D15: the properties of a machine and the values a
         // search of it is made over are read by `sce-codegen formal`.
         ForgeKind::Properties | ForgeKind::Exploration => KindClass::Declaration,
-        // docs/adr/0151, D10: a view is read and checked into its plan on
+        // docs/adr/0151, D11: a view is read and checked into its plan on
         // every backend, and lowered by the lane of [`VIEW_BACKENDS`]; every
         // other backend refuses it by name ([`awaits_runtime`]), not as a
         // missing template.
@@ -397,7 +397,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
         | ForgeKind::TestSuite => lists(TEST_SUITE_BACKENDS, lang),
-        // docs/adr/0151, D10: the circuit a view's plan prints, over the
+        // docs/adr/0151, D11: the circuit a view's plan prints, over the
         // operators of the forge runtime, ships on the backends of
         // [`VIEW_BACKENDS`], the one list both this answer and
         // [`awaits_runtime`] read.
@@ -405,7 +405,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
     }
 }
 
-/// The backends that lower a view (docs/adr/0151, D10): Rust, native and on
+/// The backends that lower a view (docs/adr/0151, D11): Rust, native and on
 /// `wasm32-unknown-unknown`, is the lane, and joins this list in the change
 /// that gives it the operators of its forge runtime (`sce_forge_runtime::view`),
 /// the template of the circuit and the dispatch arm that renders it, and in no
@@ -713,7 +713,7 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
         | ForgeKind::TestSuite) => !template_ships(kind, lang),
-        // docs/adr/0151, D10: a view document is read and checked into its
+        // docs/adr/0151, D11: a view document is read and checked into its
         // plan on every backend, and a backend that does not lower one refuses
         // it by name in its dispatch (`view/backend-unsupported`).
         ForgeKind::View => !lists(VIEW_BACKENDS, lang),
@@ -1492,7 +1492,7 @@ mod tests {
         );
     }
 
-    /// docs/adr/0151, D10: a view is read and checked on every backend and
+    /// docs/adr/0151, D11: a view is read and checked on every backend and
     /// lowered by none until its lane lands, so every backend lets it through
     /// the matrix to the dispatch that refuses it by name, and none emits it.
     #[test]
@@ -1514,7 +1514,7 @@ mod tests {
         }
         assert!(
             VIEW_BACKENDS.iter().all(|lang| *lang == Language::Rust),
-            "a view is lowered by the Rust lane alone (docs/adr/0151, D10)"
+            "a view is lowered by the Rust lane alone (docs/adr/0151, D11)"
         );
     }
 
