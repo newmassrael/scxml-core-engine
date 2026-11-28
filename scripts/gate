@@ -259,8 +259,10 @@ if (( ${#RANGES[@]} )); then
         fi
         for end in "$base" "$tip"; do
             if ! git cat-file -e "${end}^{commit}" 2>/dev/null; then
+                # The history did not arrive: could not run, never a verdict
+                # about the tree (a bx copy made without `commit` has none).
                 printf 'gate: %s %s: %s is no commit this checkout has\n' "$RANGE_FLAG" "$range" "$end" >&2
-                exit 2
+                exit 3
             fi
         done
         git diff --name-only "$base" "$tip" >>"$CHANGED_FILE"

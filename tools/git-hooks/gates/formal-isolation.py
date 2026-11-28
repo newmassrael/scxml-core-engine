@@ -39,6 +39,8 @@
     "summary": "a commit that changes a formal check changes nothing else, for a reason",
     # The verdict is a function of the commits the ranges name, and their ids are
     # in the unit's argv (`--change-set`), so a kept pass is the same commits'.
+    # Its unit asks bx for the tree's commit and its history (`commit` in the
+    # plan), since a copy of the files alone has no range to read.
     "cache": True,
     "inputs": None,
     "commits": ["CHANGES"],

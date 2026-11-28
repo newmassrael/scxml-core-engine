@@ -2546,7 +2546,11 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 wanted = {item for s in closure for item in table[s].get(key, [])}
                 if wanted:
                     unit[key] = sorted(wanted)
-            if reads_head and head is not None:
+            # A unit that reads history, HEAD's or a range's, runs in a copy of
+            # the tree at the tree's commit, with its history (bx RFC 0088 7.1,
+            # `commit`); without it the copy's HEAD is a commit bx makes of the
+            # files alone, with no parent, and a range's base is no commit it has.
+            if (reads_head and head is not None) or (reads_changes and changes):
                 unit["commit"] = True
                 unit["unmeasured_status"] = [3]
             if kept and inputs:
@@ -6780,6 +6784,12 @@ def self_test(repo_root: Path) -> int:
                 f"plan-fixture: `{slug}` runs a gate that reads the change set "
                 f"and was planned as {planned}, not with both ranges and its "
                 f"pass kept")
+        if planned.get("commit") is not True \
+                or planned.get("unmeasured_status") != [3]:
+            failures.append(
+                f"plan-fixture: `{slug}` reads the commits of its ranges and was "
+                f"planned as {planned}; without `commit` bx runs it in a copy "
+                f"of the files alone, whose history holds no range")
         bare = plan_units({slug}, rust="1.0.0", table=fixture)[0]
         if "--change-set" in bare["argv"] or bare["cache"] is not False:
             failures.append(
