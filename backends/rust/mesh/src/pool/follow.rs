@@ -34,6 +34,18 @@
 //! An entry that can be handed to no session (its schema no kind the build described, its data no
 //! value of its record, its key unreadable) is told to the host ([`PoolError::Unfollowed`]) and
 //! passed.
+//!
+//! What a session decides is made on what it read (docs/adr/0116, D5): a request may carry a
+//! position of the journals the machine follows, which an earlier answer told, in the field
+//! `sessions.position_from` names, and the pool holds it in its session's inbox until the reader's
+//! mark, as the store keeps it, has passed the position, so that the session has taken in every
+//! entry at or below it first (Pang et al. 2019, the zookie: a change made after a removal is not
+//! judged by the list before it). The session's other inputs, the entries the reader hands it
+//! among them, are taken past what waits, and an entry is handed to it past the inbox's bound
+//! while an envelope of it waits, so that what the mark waits for is never behind what waits for
+//! the mark. Each call of [`Pool::follow`] answers the sessions whose envelopes the mark passed.
+//! A position above the journal's horizon was told by no answer, and the reader would never pass
+//! it: it is refused where it is received.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
@@ -46,7 +58,7 @@ use sce_rust_session_store::{JournalEntry as StoredEntry, JournalStore, StreamNa
 
 use super::{
     checkpoint, hold, key_in, lock, Fate, Full, Input, LoadError, Pool, PoolError, Receipt,
-    SessionFactory, SharedSlot, Slot,
+    SessionFactory, SharedSlot, Slot, Table,
 };
 use crate::endpoint::{EngineCall, EngineEvent, Environment, Transport};
 use crate::peers::{FollowedEntry, Follows, KeyFrom};
@@ -74,6 +86,9 @@ pub(super) struct Followed {
     /// Settled once a durable checkpoint holds what the session made of it, or that it was a
     /// repeat; lost when the session is dropped before.
     pub(super) receipt: Receipt,
+    /// Whether the inbox's bound counts it: not when it was handed past the bound to a session
+    /// whose envelopes wait for the reader (docs/adr/0116, D5).
+    pub(super) counted: bool,
 }
 
 impl Followed {
@@ -289,6 +304,8 @@ where
                 Err(failure) => self.error(PoolError::Store { key: None, failure }),
             }
         }
+        // docs/adr/0116, D5: the envelopes that waited for the mark the store now keeps are taken.
+        pass.run.extend(self.passed(reader.kept));
         pass.run.into_iter().collect()
     }
 
@@ -382,6 +399,7 @@ where
             data: open.data.clone(),
             origin: open.origin.clone(),
             receipt: receipt.clone(),
+            counted: true,
         });
         match self.post_followed(&key, input, pass.out.get(&key)) {
             Ok(slot) => {
@@ -430,6 +448,7 @@ where
             }
             match self.post_in(&mut table, key, input) {
                 Ok(slot) => return Ok(slot),
+                Err((back, Full::Inbox)) => return self.post_past_waiting(&table, key, back),
                 Err((back, Full::Live)) if !room_made => {
                     drop(table);
                     if !self.make_room() {
@@ -441,6 +460,33 @@ where
                 Err((_, full)) => return Err(Unhanded::Full(full)),
             }
         }
+    }
+
+    /// Put `input`, an entry of a followed journal its session's inbox had no room for, in the
+    /// inbox of the session `key` in `table`, the pool's table locked, when an envelope of that
+    /// inbox waits for the reader to pass a position (docs/adr/0116, D5): the inbox's bound does
+    /// not count it, since the mark that envelope waits for may wait for it, and the session takes
+    /// it past what waits. The reader's window bounds what is handed so ([`FOLLOW_WINDOW`]).
+    /// Otherwise it waits, as any entry of a full inbox does.
+    fn post_past_waiting(
+        &self,
+        table: &Table<F::Machine, T, E>,
+        key: &str,
+        input: Input,
+    ) -> Result<SharedSlot<F::Machine, T, E>, Unhanded> {
+        let Some(slot) = table.get(key) else {
+            return Err(Unhanded::Full(Full::Inbox));
+        };
+        let mut inbox = hold(&slot.inbox);
+        if !inbox.waits_on_reader(self.read_mark()) {
+            return Err(Unhanded::Full(Full::Inbox));
+        }
+        let mut input = input;
+        if let Input::Followed(entry) = &mut input {
+            entry.counted = false;
+        }
+        inbox.tell(input);
+        Ok(Arc::clone(slot))
     }
 
     /// Whether another process holds the lease on `key` now.

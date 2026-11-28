@@ -93,7 +93,12 @@
 //! host calls [`Pool::follow`], and hands each entry to the session its key
 //! field names; each session keeps the position it took in of each journal in
 //! its checkpoint, so an entry handed again takes effect once (module
-//! `follow`).
+//! `follow`). What such a session decides is made on what it read
+//! (docs/adr/0116, D5): a fact it says records how far it had read each journal
+//! it follows, and a request that carries a position of them, in the field
+//! deploy.yaml's `sessions.position_from` names, waits in its session's inbox
+//! until the reader's mark has passed the position; a position above the
+//! journal's horizon is refused where it is received.
 //!
 //! A machine bound to an open machine (docs/adr/0113), whose instances no
 //! deployment lists, is pooled with the store that keeps their members
@@ -194,7 +199,7 @@ mod sync {
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -401,6 +406,15 @@ pub enum PoolError {
         incarnation: u64,
         current: Option<u64>,
     },
+    /// An envelope for `key` that is not a request, dropped for the position of the journals the
+    /// machine follows it carries in the field `sessions.position_from` names (docs/adr/0116,
+    /// D5), for `reason`: it is no position, it is above the journal's horizon, which no answer
+    /// told, or the pool reads no journal. A request is answered with a failure status instead.
+    Unpositioned {
+        key: String,
+        event: String,
+        reason: String,
+    },
     /// The envelope numbered `number` in `client`'s outbox, appended at `at_ms`, was kept longer
     /// than the binding's `retain_ms` without `client` acknowledging it, and the store let it go
     /// (docs/adr/0109, D10). `sender`, the session that sent it, is told at its next run, as
@@ -534,6 +548,10 @@ enum Input {
         /// delegation its store holds (docs/adr/0116, D1 and D3); boxed, as an event's person is,
         /// so that an envelope said for nobody costs its inbox one pointer.
         acting: Option<Box<Principal>>,
+        /// The position of the journals the machine follows that the envelope waits for the
+        /// pool's reader to pass before its session takes it (docs/adr/0116, D5); `None` for one
+        /// that carries none, or one the reader had passed when it was received.
+        after: Option<u64>,
     },
     /// The store's latest answer for the member whose instance is the peer named
     /// (docs/adr/0113, D5).
@@ -556,9 +574,20 @@ enum Input {
 impl Input {
     /// Whether the input counts toward the inbox's bound as an envelope does: an envelope, or an
     /// entry of a followed journal, which waits as an envelope does so that a follower that cannot
-    /// keep up stops the reader at the bound (docs/adr/0114, D4).
+    /// keep up stops the reader at the bound (docs/adr/0114, D4), unless it was told past the
+    /// bound to a session whose envelopes wait for the reader (docs/adr/0116, D5).
     fn waits_as_an_envelope(&self) -> bool {
-        matches!(self, Input::Envelope { .. } | Input::Followed(_))
+        match self {
+            Input::Envelope { .. } => true,
+            Input::Followed(entry) => entry.counted,
+            _ => false,
+        }
+    }
+
+    /// Whether the input is an envelope that waits for the pool's reader to pass a position above
+    /// `mark` (docs/adr/0116, D5).
+    fn waits_on_reader(&self, mark: u64) -> bool {
+        matches!(self, Input::Envelope { after: Some(after), .. } if *after > mark)
     }
 }
 
@@ -593,11 +622,33 @@ impl Inbox {
         self.queue.push_back(input);
     }
 
-    /// Take the oldest input, for the session's owner to apply.
-    fn take(&mut self) -> Option<Input> {
-        let input = self.queue.pop_front()?;
+    /// Take the oldest input the session's owner may apply while the pool's reader has passed
+    /// `mark` (docs/adr/0116, D5): an envelope waits while it, or an envelope before it, carries a
+    /// position above `mark`, so that a client's envelopes keep their order; every other input,
+    /// an entry of a followed journal among them, is taken past it, so that the session takes in
+    /// what the reader must hand it for the mark to rise.
+    fn take(&mut self, mark: u64) -> Option<Input> {
+        let index = self.takeable(mark)?;
+        let input = self.queue.remove(index)?;
         self.door.took(input.waits_as_an_envelope());
         Some(input)
+    }
+
+    /// Where the oldest input [`Self::take`] takes at `mark` is in the queue.
+    fn takeable(&self, mark: u64) -> Option<usize> {
+        let mut waiting = false;
+        self.queue.iter().position(|input| match input {
+            Input::Envelope { .. } => {
+                waiting |= input.waits_on_reader(mark);
+                !waiting
+            }
+            _ => true,
+        })
+    }
+
+    /// Whether an envelope it holds waits for the reader to pass a position above `mark`.
+    fn waits_on_reader(&self, mark: u64) -> bool {
+        self.queue.iter().any(|input| input.waits_on_reader(mark))
     }
 
     fn is_empty(&self) -> bool {
@@ -829,6 +880,13 @@ where
     /// ([`Pool::follow_from`], docs/adr/0114, D4), and what its reader holds.
     journal: Option<Arc<dyn JournalStore>>,
     reader: Mutex<follow::Reader<F::Machine, T, E>>,
+    /// The reader's mark as the store last kept it (docs/adr/0116, D5): every entry at or below it
+    /// was taken in by a durable checkpoint of its session. An envelope that carries a position
+    /// at or below it is taken at once; one above it waits. Only rises.
+    read_mark: AtomicU64,
+    /// The envelopes that wait for the reader, each by the position it carries and the key of
+    /// its session, which [`Pool::follow`] answers once the mark passed the position.
+    awaiting: Mutex<BTreeSet<(u64, String)>>,
 }
 
 impl<F, T, E> Pool<F, T, E>
@@ -997,6 +1055,8 @@ where
             stopped: sync::AtomicBool::new(false),
             journal: None,
             reader: Mutex::new(follow::Reader::new()),
+            read_mark: AtomicU64::new(0),
+            awaiting: Mutex::new(BTreeSet::new()),
         })
     }
 
@@ -1140,10 +1200,49 @@ where
                 });
                 return (None, Receipt::new(Fate::Settled));
             };
-            self.place(peer, &envelope)
+            self.place(peer, &envelope).map(|key| {
+                // docs/adr/0116, D5: the position of the journals the machine follows that the
+                // envelope carries, which it waits for the reader to pass.
+                let after = self
+                    .position_of(&envelope)
+                    .map_err(|reason| Refusal {
+                        status: RpcStatus::InvalidArgument,
+                        reason,
+                    })
+                    .and_then(|position| self.waits_for(position))
+                    .map_err(|refusal| {
+                        (
+                            request_of(&envelope),
+                            envelope.event_type.to_string(),
+                            refusal,
+                        )
+                    });
+                (key, after)
+            })
         };
         match placed {
-            Ok(key) => {
+            Ok((key, Err((request, event, refusal)))) => {
+                // Refused as unavailable (the store did not answer the horizon), it is carried
+                // again: lost to a host that reads the receipt, as a shed envelope is.
+                let carried_again = refusal.status == RpcStatus::Unavailable;
+                let fate = match request.filter(|_| !(carried_again && acknowledged)) {
+                    Some(request) => self.refuse(peer, &request, refusal.status, &refusal.reason),
+                    None => {
+                        self.error(PoolError::Unpositioned {
+                            key,
+                            event,
+                            reason: refusal.reason,
+                        });
+                        if carried_again {
+                            Fate::Lost
+                        } else {
+                            Fate::Settled
+                        }
+                    }
+                };
+                (None, Receipt::new(fate))
+            }
+            Ok((key, Ok(after))) => {
                 let receipt = Receipt::new(Fate::Pending);
                 let input = Input::Envelope {
                     peer: peer.to_string(),
@@ -1151,9 +1250,18 @@ where
                     receipt: receipt.clone(),
                     judged,
                     acting: acting.map(Box::new),
+                    after,
                 };
                 match self.post_bounded(&key, input) {
-                    Ok(()) => (Some(key), receipt),
+                    Ok(()) => {
+                        // Noted once it waits in its inbox, before the host runs its session: a
+                        // mark that rose since it was read is read again by the run, and one that
+                        // rises later answers the key (`Pool::follow`).
+                        if let Some(after) = after {
+                            lock(&self.awaiting).insert((after, key.clone()));
+                        }
+                        (Some(key), receipt)
+                    }
                     Err((input, full)) => {
                         self.shed(&key, input, full, acknowledged);
                         (None, receipt)
@@ -1746,6 +1854,79 @@ where
         self.bounded_key(key)
     }
 
+    /// The position of the journals the machine follows that `envelope` carries in the field
+    /// `sessions.position_from` names (docs/adr/0116, D5): `None` for a pool that names none, or
+    /// an envelope whose data has no such field or holds `null` in it; or why it carries none the
+    /// pool can read.
+    fn position_of(&self, envelope: &Envelope<'_>) -> Result<Option<u64>, String> {
+        let Some(field) = self.sessions.position_from else {
+            return Ok(None);
+        };
+        let text = payload_text(envelope).map_err(|codec| {
+            alloc::format!("its data is in the {codec} codec, which the pool does not read")
+        })?;
+        if text.is_empty() {
+            return Ok(None);
+        }
+        position_in(&text, field)
+    }
+
+    /// What an envelope that carries `position` of the journals the machine follows waits for
+    /// (docs/adr/0116, D5): nothing when it carries none, or one the reader's mark has passed; the
+    /// position, when it is at or below the journal's horizon, which the reader reaches. Refused
+    /// when it is above the horizon: nothing at or below the horizon can still become visible, so
+    /// a position above it was told by no answer, and the reader would never pass it; and when the
+    /// pool reads no journal (`Pool::follow_from`), or the store did not answer its horizon.
+    fn waits_for(&self, position: Option<u64>) -> Result<Option<u64>, Refusal> {
+        let Some(position) = position.filter(|position| *position > self.read_mark()) else {
+            return Ok(None);
+        };
+        let Some(journal) = &self.journal else {
+            return Err(Refusal {
+                status: RpcStatus::InternalError,
+                reason:
+                    "the pool reads no journal (`Pool::follow_from`), so it passes no position \
+                         of one"
+                        .to_string(),
+            });
+        };
+        // The horizon, which every read answers: past the last position there is, no entry.
+        match journal.after(u64::MAX, 0) {
+            Ok(page) if position <= page.horizon => Ok(Some(position)),
+            Ok(page) => Err(Refusal {
+                status: RpcStatus::InvalidArgument,
+                reason: alloc::format!(
+                    "it carries the position {position} of the journals the machine follows, \
+                     above the journal's horizon, {}, which no answer told",
+                    page.horizon
+                ),
+            }),
+            Err(failure) => {
+                self.error(PoolError::Store { key: None, failure });
+                Err(Refusal::unavailable(
+                    "the journal's horizon could not be read".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// The reader's mark as the store last kept it (docs/adr/0116, D5).
+    fn read_mark(&self) -> u64 {
+        self.read_mark.load(Ordering::SeqCst)
+    }
+
+    /// The reader's mark kept in the store is `mark` (docs/adr/0116, D5): the keys of the sessions
+    /// whose envelopes waited for a position at or below it, which the host runs.
+    fn passed(&self, mark: u64) -> Vec<String> {
+        self.read_mark.fetch_max(mark, Ordering::SeqCst);
+        let mut awaiting = lock(&self.awaiting);
+        let above = awaiting.split_off(&(mark.saturating_add(1), String::new()));
+        core::mem::replace(&mut *awaiting, above)
+            .into_iter()
+            .map(|(_, key)| key)
+            .collect()
+    }
+
     /// `key`, or why it names no session of this pool: it is empty, or longer than a key of the
     /// pool holds.
     fn bounded_key(&self, key: String) -> Result<String, String> {
@@ -2013,7 +2194,12 @@ where
             let waiting: Vec<String> = self
                 .slots()
                 .into_iter()
-                .filter(|slot| !hold(&slot.inbox).is_empty())
+                .filter(|slot| {
+                    // docs/adr/0116, D5: an envelope that waits for a reader a stopping pool no
+                    // longer runs is not run for; it is answered below.
+                    let inbox = hold(&slot.inbox);
+                    inbox.takeable(self.read_mark()).is_some()
+                })
                 .map(|slot| slot.key.clone())
                 .collect();
             if waiting.is_empty() || Instant::now() >= deadline {
@@ -2042,6 +2228,11 @@ where
                 continue;
             };
             if live.is_none() {
+                // docs/adr/0116, D5: a session never loaded whose envelopes all wait for the
+                // reader: what its inbox holds is answered, and its senders carry it again.
+                if !hold(&slot.inbox).is_empty() {
+                    self.abandon(&slot, &Refusal::unavailable("the pool stopped".to_string()));
+                }
                 continue;
             }
             let now = self.wall_now();
@@ -2436,7 +2627,7 @@ where
             if hold(&slot.lease).is_lost() {
                 return Served::Lost("its lease was not renewed".to_string());
             }
-            let next = hold(&slot.inbox).take();
+            let next = hold(&slot.inbox).take(self.read_mark());
             let Some(input) = next else {
                 break;
             };
@@ -2461,6 +2652,7 @@ where
                         receipt,
                         judged: Some((made_under, standing)),
                         acting,
+                        ..
                     } if endpoint.judges_by_records(&peer) => {
                         match endpoint.receive_member_for(
                             &peer,
@@ -3225,6 +3417,22 @@ fn key_in(text: &str, field: &str) -> Result<String, String> {
             "its field '{field}' is neither a text nor an integer"
         )),
         None => Err(alloc::format!("its data has no field '{field}'")),
+    }
+}
+
+/// The position of a journal the field `field` of `text`, a JSON object, holds
+/// (docs/adr/0116, D5): `None` when it has no such field or holds `null` in it; refused when it
+/// holds anything but an unsigned integer that fits a position.
+fn position_in(text: &str, field: &str) -> Result<Option<u64>, String> {
+    let data = json::parse(text).map_err(|error| alloc::format!("its data is {error}"))?;
+    match data.member(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(digits)) => digits.parse::<u64>().map(Some).map_err(|_| {
+            alloc::format!("its field '{field}' is {digits}, which is no position of a journal")
+        }),
+        Some(_) => Err(alloc::format!(
+            "its field '{field}' is no position of a journal"
+        )),
     }
 }
 

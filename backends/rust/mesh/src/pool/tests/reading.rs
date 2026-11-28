@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! What a decision of a pool that follows journals had read (docs/adr/0116, D5): a fact its
-//! session says records how far the session had read each journal it follows.
+//! session says records how far the session had read each journal it follows, and a request that
+//! carries a position of those journals waits in its session's inbox until the pool's reader has
+//! passed it.
 
 use super::journal::{tellers, told, SAID};
 use super::*;
@@ -153,23 +155,32 @@ const FOLLOWS: Follows = Follows {
     }],
 };
 
-/// The deciders, keyed by the `room` field of what they are told and of the entries they follow.
-fn deciders_machine() -> Machine {
+/// The deciders, keyed by the `room` field of what they are told and of the entries they follow,
+/// a request's position of the tellers' journal read from `position_from`, holding at most
+/// `max_inbox` envelopes in one session's inbox.
+fn deciders_machine(position_from: Option<&'static str>, max_inbox: u32) -> Machine {
     Machine {
         name: "deciders",
         sessions: Some(Sessions {
             follows: FOLLOWS,
+            position_from,
+            max_inbox,
             ..ROOMS_SESSIONS
         }),
         ..ROOMS
     }
 }
 
-/// A pool of the deciders, its sessions kept through the deciders' handle on `store`, reading the
-/// journal of `store`.
-fn deciders(store: &MemoryStore, clock: &Clock) -> Pool<Deciders, Wire, Clock> {
+/// A pool of `machine`, a deployment of the deciders, its sessions kept through the deciders'
+/// handle on `store`, reading the journal of `store`, and the transport it sends through.
+fn deciders(
+    machine: Machine,
+    store: &MemoryStore,
+    clock: &Clock,
+) -> (Pool<Deciders, Wire, Clock>, Wire) {
+    let wire = Wire::default();
     let pool = Pool::new(
-        deciders_machine(),
+        machine,
         PoolConfig {
             owner: "p1".to_string(),
             lease_ttl_ms: LEASE_TTL_MS,
@@ -177,13 +188,13 @@ fn deciders(store: &MemoryStore, clock: &Clock) -> Pool<Deciders, Wire, Clock> {
         },
         Deciders,
         Arc::new(store.of_machine("deciders")),
-        Wire::default(),
+        wire.clone(),
         clock.clone(),
     )
     .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"))
     .follow_from(Arc::new(store.clone()));
     pool.peer_ready("client");
-    pool
+    (pool, wire)
 }
 
 /// Make the tellers of `store` say `said`, each a room and a fact, in order, the client's
@@ -253,7 +264,7 @@ fn tellers_through(through: u64) -> Vec<Read> {
 fn a_fact_a_follower_says_records_how_far_it_had_read() {
     let (store, clock) = (MemoryStore::new(), Clock::new());
     say(&store, &clock, 1, &[("r1", "a"), ("r1", "b"), ("r2", "c")]);
-    let pool = deciders(&store, &clock);
+    let (pool, _) = deciders(deciders_machine(None, 64), &store, &clock);
     follow_all(&pool);
     for (n, room) in (1..).zip(["r1", "r2", "r3"]) {
         let key = pool
@@ -281,4 +292,168 @@ fn a_fact_a_follower_says_records_how_far_it_had_read() {
         [("1".to_string(), tellers_through(3))]
     );
     assert_eq!(decisions(&store, "r3"), [("0".to_string(), Vec::new())]);
+}
+
+/// What the decider of `room` decided, as its durable checkpoint holds it: the count of the
+/// tellers' facts each decision had taken in.
+fn decided(store: &MemoryStore, room: &str) -> Vec<u32> {
+    let loaded = checkpoint::load(&store.of_machine("deciders"), room)
+        .expect("read")
+        .expect("a decider saved");
+    decider_of(&loaded.checkpoint.state).expect("a decider").1
+}
+
+/// D5: a request that carries a position of the journal the deciders follow waits in its
+/// session's inbox, its receipt pending, while the session takes in the entries the reader hands
+/// it past it; once the mark the store keeps of the reader has passed the position,
+/// [`Pool::follow`] answers the session and the request is decided on every entry at or below
+/// it. A request whose position the mark has passed, or that carries none, is taken at once. Red
+/// if the pool hands the session a request before the reader has passed its position: the first
+/// decision is then made on none of the room's facts.
+#[test]
+fn a_request_waits_until_the_reader_has_passed_its_position() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    say(&store, &clock, 1, &[("r1", "a"), ("r1", "b"), ("r2", "c")]);
+    let (pool, _) = deciders(deciders_machine(Some("after"), 64), &store, &clock);
+    let (key, waits) = pool.receive_with_receipt("client", ask(r#"{"room":"r1","after":2}"#, 1));
+    let key = key.expect("placed in a session");
+    pool.run(&key);
+    assert!(pool.is_live("r1"), "its session is loaded and waits");
+    assert_eq!(waits.fate(), Fate::Pending, "it waits in its inbox");
+    assert!(
+        decisions(&store, "r1").is_empty(),
+        "decided before the reader passed it"
+    );
+    follow_all(&pool);
+    assert_eq!(waits.fate(), Fate::Settled);
+    assert_eq!(
+        decisions(&store, "r1"),
+        [("2".to_string(), tellers_through(2))]
+    );
+    // Past the decision, at 4, which the reader reads and follows no stream of.
+    assert_eq!(store.read_through("deciders").expect("the mark"), 4);
+    for (n, data) in [(2, r#"{"room":"r2","after":3}"#), (3, r#"{"room":"r2"}"#)] {
+        let key = pool
+            .receive("client", ask(data, n))
+            .expect("placed in a session");
+        pool.run(&key);
+    }
+    assert_eq!(decided(&store, "r2"), [1, 1], "taken at once");
+    assert!(pool.take_errors().is_empty());
+}
+
+/// D5: an entry of the followed journal reaches a session whose inbox is at its bound with a
+/// request that waits for the reader, and the session takes it past the request, so the mark
+/// the request waits for rises. Red if the reader holds the entry at the bound as it holds one
+/// for a session that cannot keep up: the request then waits for an entry that waits for it.
+#[test]
+fn an_entry_reaches_a_session_whose_request_waits_at_its_bound() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    say(&store, &clock, 1, &[("r1", "a"), ("r1", "b")]);
+    let (pool, _) = deciders(deciders_machine(Some("after"), 1), &store, &clock);
+    let key = pool
+        .receive("client", ask(r#"{"room":"r1","after":2}"#, 1))
+        .expect("placed in a session");
+    pool.run(&key);
+    follow_all(&pool);
+    assert_eq!(decided(&store, "r1"), [2]);
+    assert_eq!(store.read_through("deciders").expect("the mark"), 3);
+    assert!(pool.take_errors().is_empty());
+}
+
+/// D5: a position above the journal's horizon was told by no answer, and the reader would never
+/// pass it, so it is refused where it is received: a request is answered `InvalidArgument`, and
+/// anything else is dropped and told to the host. So is a field that holds no position. Red if
+/// such a request is held: it then waits for ever.
+#[test]
+fn a_position_above_the_horizon_or_no_position_is_refused() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    say(&store, &clock, 1, &[("r1", "a")]);
+    let (pool, wire) = deciders(deciders_machine(Some("after"), 64), &store, &clock);
+    for (n, data) in [
+        (1, r#"{"room":"r1","after":2}"#),
+        (2, r#"{"room":"r1","after":-1}"#),
+        (3, r#"{"room":"r1","after":"one"}"#),
+    ] {
+        assert_eq!(
+            pool.receive("client", from_client("ask", data, n, true)),
+            None,
+            "{data}"
+        );
+        let replies = wire.take();
+        assert_eq!(replies.len(), 1, "{data}: {replies:?}");
+        assert_eq!(
+            replies[0].status,
+            Some(RpcStatus::InvalidArgument),
+            "{data}"
+        );
+        assert_eq!(replies[0].wire_id, Some(id(0x22, n)));
+    }
+    assert_eq!(
+        pool.receive("client", ask(r#"{"room":"r1","after":2}"#, 4)),
+        None
+    );
+    let errors = pool.take_errors();
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [PoolError::Unpositioned { key, event, reason }]
+                if key == "r1" && event == "ask" && reason.contains("above the journal's horizon, 1")
+        ),
+        "{errors:?}"
+    );
+    assert!(
+        !pool.is_live("r1"),
+        "no session was loaded for what was refused"
+    );
+}
+
+/// D5: a stop answers a request that waits for a reader the stopping pool no longer runs,
+/// whether its session was loaded or never was, and does not wait for it until its deadline;
+/// the sender carries it again. Red if the stop runs a session whose inbox holds only what waits
+/// until its deadline, or leaves a session that was never loaded holding its request unanswered.
+#[test]
+fn a_stop_answers_a_request_that_waits_for_the_reader() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    say(&store, &clock, 1, &[("r1", "a"), ("r2", "b")]);
+    let (pool, wire) = deciders(deciders_machine(Some("after"), 64), &store, &clock);
+    let loaded = pool
+        .receive(
+            "client",
+            from_client("ask", r#"{"room":"r1","after":2}"#, 1, true),
+        )
+        .expect("placed in a session");
+    pool.run(&loaded);
+    assert!(pool.is_live("r1"));
+    assert_eq!(
+        pool.receive(
+            "client",
+            from_client("ask", r#"{"room":"r2","after":2}"#, 2, true)
+        ),
+        Some("r2".to_string()),
+        "placed in a session never run"
+    );
+    let patience = Duration::from_secs(5);
+    let began = Instant::now();
+    let report = pool.stop(began + patience);
+    assert!(
+        began.elapsed() < patience,
+        "the stop waited for what waits for the reader until its deadline"
+    );
+    assert_eq!(report.saved, ["r1"], "{report:?}");
+    let mut answered: Vec<(Option<[u8; 16]>, Option<RpcStatus>)> = wire
+        .take()
+        .into_iter()
+        .filter(|sent| sent.pattern == PatternKind::RpcReply)
+        .map(|sent| (sent.wire_id, sent.status))
+        .collect();
+    answered.sort_by_key(|(wire_id, _)| *wire_id);
+    assert_eq!(
+        answered,
+        [
+            (Some(id(0x22, 1)), Some(RpcStatus::Unavailable)),
+            (Some(id(0x22, 2)), Some(RpcStatus::Unavailable)),
+        ]
+    );
+    assert!(decisions(&store, "r1").is_empty() && decisions(&store, "r2").is_empty());
 }
