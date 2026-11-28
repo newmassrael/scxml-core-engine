@@ -220,6 +220,13 @@ var errMoreThanOneValue = errors.New("it carries more than one JSON value")
 // space, tab, line feed and carriage return, and no other.
 const jsonWhitespace = " \t\n\r"
 
+// errNotUTF8 is why a text that is not UTF-8 is no JSON text (RFC 8259, section
+// 8.1): encoding/json reads bytes that are not UTF-8, the three a surrogate code
+// point would be written in among them, as U+FFFD, which the text did not say,
+// and a text of the language is a sequence of Unicode scalar values
+// (docs/adr/0149, D8).
+var errNotUTF8 = errors.New("the text is not UTF-8")
+
 // errHalfOfACharacter is why a text whose `\u` escape is half of a UTF-16 pair
 // is not JSON every runtime reads alike: encoding/json reads a lone half as
 // U+FFFD, which the text did not say.
@@ -299,6 +306,9 @@ func hex4(text string, at int) (uint16, bool) {
 // (docs/adr/0087, section 2.3). The text is read token by token for that, since
 // a map decoded whole no longer shows the name twice.
 func decodeJSON(text string) (any, error) {
+	if !utf8.ValidString(text) {
+		return nil, errNotUTF8
+	}
 	if err := pairedEscapes(text); err != nil {
 		return nil, err
 	}

@@ -417,10 +417,21 @@ object Json {
                         }
                     }
                     // RFC 8259, section 7: a character below U+0020 stands in a
-                    // text only as an escape.
+                    // text only as an escape. A JSON text is UTF-8 (section 8.1),
+                    // which spells no half of a UTF-16 pair alone, so a half that
+                    // stands in a text as itself is the first of a pair whose
+                    // second follows at once (docs/adr/0149, D8).
                     else -> {
                         if (c < ' ') malformed("a control character stands in a text unescaped")
-                        sb.append(c)
+                        if (c.isLowSurrogate()) malformed("half of a UTF-16 pair stands alone in a text")
+                        if (c.isHighSurrogate()) {
+                            if (atEnd() || !text[at].isLowSurrogate()) {
+                                malformed("half of a UTF-16 pair stands alone in a text")
+                            }
+                            sb.append(c).append(text[at++])
+                        } else {
+                            sb.append(c)
+                        }
                     }
                 }
             }

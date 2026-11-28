@@ -83,13 +83,38 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
     }
 }
 
+/// The bytes `hex` spells, two digits to a byte.
+private func bytesOfHex(_ hex: String) -> [UInt8] {
+    let digits = Array(hex.utf8)
+    return stride(from: 0, to: digits.count - 1, by: 2).map {
+        UInt8(String(decoding: digits[$0...$0 + 1], as: UTF8.self), radix: 16) ?? 0
+    }
+}
+
 @Test func everyCaseOfTheSharedTableIsRefusedWithItsCodePointerAndBound() throws {
     let cases = try sharedCases("json_text/payload_refusal.json")
     #expect(cases.count >= 40, "the table lost cases: \(cases.count)")
     for c in cases {
         let name = try #require(c["name"] as? String)
-        let data = try #require(c["data"] as? String)
         let type = try #require(c["type"])
+        let data: String
+        if let hex = c["dataHex"] as? String {
+            // A case that gives `dataHex` gives the bytes of a text in which a surrogate
+            // code point may stand as itself. A `String` holds only Unicode scalar values,
+            // so this reader's text is made from bytes by the type's checked construction,
+            // which refuses bytes that are not UTF-8: the case's refusal, `notJson` (RFC
+            // 8259, section 8.1), is made there (docs/adr/0149, D8).
+            guard let text = String(validating: bytesOfHex(hex), as: UTF8.self) else {
+                let want = try #require(c["refusal"] as? [String: Any], "\(name): no text, the table reads it")
+                #expect(want["code"] as? String == "notJson", "\(name): no text of the bytes")
+                #expect(want["pointer"] as? String == "", "\(name): no text of the bytes")
+                #expect(want["bound"] as? Int == nil, "\(name): no text of the bytes")
+                continue
+            }
+            data = text
+        } else {
+            data = try #require(c["data"] as? String)
+        }
         var got: PayloadRefusal?
         do {
             // A case that gives a depth is read as a `<sce:lift>` of the record of the

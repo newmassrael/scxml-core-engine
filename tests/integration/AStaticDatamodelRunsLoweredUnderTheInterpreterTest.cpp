@@ -1792,13 +1792,50 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAValue
     engine_->destroySession(session);
 }
 
+namespace {
+
+/// The data a case of tests/json_text/payload_refusal.json gives as `dataHex`, as an
+/// ECMAScript expression of the UTF-16 code units it spells. The table writes such data in
+/// generalized UTF-8, each code point as UTF-8 would write it were it a scalar value, so the
+/// three bytes of a surrogate code point are that one unit alone and a character past U+FFFF
+/// is its pair. Written as `String.fromCharCode`, so no escape stands between the table
+/// and the units the library is handed.
+std::string codeUnitsOfHex(const std::string &hex) {
+    std::vector<uint32_t> bytes;
+    for (size_t at = 0; at + 1 < hex.size(); at += 2) {
+        bytes.push_back(static_cast<uint32_t>(std::stoul(hex.substr(at, 2), nullptr, 16)));
+    }
+    std::string units;
+    const auto unit = [&units](uint32_t code) { units += (units.empty() ? "" : ", ") + std::to_string(code); };
+    for (size_t at = 0; at < bytes.size();) {
+        const uint32_t lead = bytes[at];
+        const size_t more = lead >= 0xF0u ? 3 : lead >= 0xE0u ? 2 : lead >= 0xC0u ? 1 : 0;
+        uint32_t code = more == 3 ? (lead & 0x07u) : more == 2 ? (lead & 0x0Fu) : more == 1 ? (lead & 0x1Fu) : lead;
+        for (size_t i = 1; i <= more; ++i) {
+            code = (code << 6) | (bytes.at(at + i) & 0x3Fu);
+        }
+        at += more + 1;
+        if (code >= 0x10000u) {
+            unit(0xD800u + ((code - 0x10000u) >> 10));
+            unit(0xDC00u + ((code - 0x10000u) & 0x3FFu));
+        } else {
+            unit(code);
+        }
+    }
+    return "String.fromCharCode(" + units + ")";
+}
+
+}  // namespace
+
 // The library's refusal carries, beside its sentence, the code, the RFC 6901 pointer and
 // the bound every runtime's reader names (docs/adr/0087, sections 2.3 and 2.4), held to
 // tests/json_text/payload_refusal.json, the table every reader reads. The text of each
 // case is read by the library's own reader of JSON text (`SceStatic.parseText`), which
-// holds it to RFC 8259 alone as every runtime's reader does, a repeated name and a lax
-// number included, so every case of the table is the library's; a case that gives a
-// depth is read as a `<sce:lift>` reads its text (`SceStatic.lift`).
+// holds it to RFC 8259 alone as every runtime's reader does, a repeated name, a lax
+// number and half of a UTF-16 pair standing alone included, so every case of the table
+// is the library's; a case that gives a depth is read as a `<sce:lift>` reads its text
+// (`SceStatic.lift`), and one that gives its data as bytes is handed the code units they
+// spell (`codeUnitsOfHex`).
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRefusalByItsCodePointerAndBound) {
     const char *bin = std::getenv("SCE_CODEGEN_BIN");
     ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
@@ -1820,7 +1857,8 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
     size_t asked = 0;
     for (const auto &c : cases) {
         const std::string name = c.at("name").get<std::string>();
-        const std::string data = c.at("data").get<std::string>();
+        const std::string text = c.contains("dataHex") ? codeUnitsOfHex(c.at("dataHex").get<std::string>())
+                                                       : nlohmann::json(c.at("data").get<std::string>()).dump();
         ++asked;
         // A delivery's text that is no JSON is refused with no data read; a lift's text is
         // read whole by `SceStatic.lift`, the record of the one field `v` its type, its
@@ -1834,7 +1872,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
                                   "return JSON.stringify({refusal: {code: 'notJson', pointer: '', bound: null}}); } } "
                                   "SceStatic.field(data, 'v', " +
                                       c.at("type").dump() + ");";
-        const std::string program = "(function () { var text = " + nlohmann::json(data).dump() + "; try { " + reading +
+        const std::string program = "(function () { var text = " + text + "; try { " + reading +
                                     " return JSON.stringify({read: true}); } catch (e) { return "
                                     "JSON.stringify({refusal: e.sceRefusal === undefined ? null : e.sceRefusal, "
                                     "message: String(e.message)}); } })()";

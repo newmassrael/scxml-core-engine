@@ -422,12 +422,18 @@ SCE_C_UNUSED static inline const char *sce_payload_find_in(const char *object, c
 /* Four hex digits at `p`, or -1 when they are not; defined with the readers below. */
 SCE_C_UNUSED static inline long sce_payload_hex4(const char *p);
 
+/* The code point of the UTF-8 sequence at `*p`, `*p` moved past it, or false when the
+   bytes are no UTF-8; defined with the scan below. */
+SCE_C_UNUSED static inline bool sce_payload_utf8_at(const char **p, unsigned long *code);
+
 /* Past one JSON string at `p` in RFC 8259's grammar (sections 7 and 8.2): closed, no
    character below U+0020 standing unescaped, every escape one of the eight short ones
    or `\u` and four hex digits, and a `\u` escape of the first half of a UTF-16 pair
-   followed at once by one of the second half, a second half never alone. NULL when
+   followed at once by one of the second half, a second half never alone, and every
+   other character UTF-8 (section 8.1), which spells no surrogate code point. NULL when
    `p` spells none: a half of a character names no character, so the text is no JSON
-   text every runtime reads alike (tests/json_text/payload_refusal.json). */
+   text every runtime reads alike (tests/json_text/payload_refusal.json; docs/adr/0149,
+   D8). */
 SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p) {
     if (*p != '"') {
         return NULL;
@@ -436,6 +442,13 @@ SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p) {
     while (*p != '"') {
         if ((unsigned char)*p < 0x20u) {
             return NULL;
+        }
+        if ((unsigned char)*p >= 0x80u) {
+            unsigned long code = 0u;
+            if (!sce_payload_utf8_at(&p, &code)) {
+                return NULL;
+            }
+            continue;
         }
         if (*p == '\\') {
             p++;

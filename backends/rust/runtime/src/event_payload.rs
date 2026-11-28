@@ -1534,12 +1534,46 @@ mod tests {
         assert!(cases.len() >= 40, "the table lost cases: {}", cases.len());
         let mut failures = Vec::new();
         for case in cases {
-            let (Some(Value::Text(name)), Some(Value::Text(data)), Some(ty)) = (
-                case.member("name"),
-                case.member("data"),
-                case.member("type"),
-            ) else {
-                panic!("a case has a name, data and a type: {case:?}");
+            let (Some(Value::Text(name)), Some(ty)) = (case.member("name"), case.member("type"))
+            else {
+                panic!("a case has a name and a type: {case:?}");
+            };
+            // A case that gives `dataHex` gives the bytes of a text in which a
+            // surrogate code point may stand as itself. A `str` holds only
+            // Unicode scalar values, so this reader's text is made from bytes by
+            // `str`'s checked construction, which refuses bytes that are not
+            // UTF-8: the case's refusal, `notJson` (RFC 8259, section 8.1), is
+            // made there (docs/adr/0149, D8).
+            let data = match (case.member("data"), case.member("dataHex")) {
+                (Some(Value::Text(data)), None) => data.clone(),
+                (None, Some(Value::Text(hex))) => {
+                    let bytes = (0..hex.len())
+                        .step_by(2)
+                        .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("dataHex is hex"))
+                        .collect::<Vec<u8>>();
+                    match String::from_utf8(bytes) {
+                        Ok(text) => text,
+                        Err(_) => {
+                            let refused_as_no_json = matches!(
+                                case.member("refusal").map(|want| (
+                                    want.member("code"),
+                                    want.member("pointer"),
+                                    want.member("bound"),
+                                )),
+                                Some((Some(Value::Text(code)), Some(Value::Text(pointer)), Some(Value::Null)))
+                                    if code == "notJson" && pointer.is_empty()
+                            );
+                            if !refused_as_no_json {
+                                failures.push(format!(
+                                    "{name}: no str is made of the bytes, the table says {:?}",
+                                    case.member("refusal")
+                                ));
+                            }
+                            continue;
+                        }
+                    }
+                }
+                other => panic!("{name}: a case gives data or dataHex: {other:?}"),
             };
             // A case that gives a depth is read as a `<sce:lift>` of the record
             // of the one field `v` reads it (docs/adr/0087, section 2.1).
@@ -1551,12 +1585,12 @@ mod tests {
             };
             let fields = match case.member("depth") {
                 Some(Value::Number(depth)) => PayloadFields::lift(
-                    data,
+                    &data,
                     depth.parse::<u32>().expect("a depth is a uint32"),
                     path_bound,
                     None,
                 ),
-                _ => PayloadFields::decode(data),
+                _ => PayloadFields::decode(&data),
             };
             let read = fields.and_then(|fields| read_described(ty, &fields.field("v")?));
             match (case.member("refusal"), read) {

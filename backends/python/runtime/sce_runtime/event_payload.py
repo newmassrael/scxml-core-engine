@@ -679,9 +679,20 @@ def _paired_escapes(text: str) -> None:
         at += 1
 
 
+def _scalar_values(text: str) -> None:
+    """Refuse a text in which a surrogate code point stands as itself
+    (docs/adr/0149, D8): a JSON text is UTF-8 (RFC 8259, section 8.1), which
+    spells none, and `json.loads` keeps one in a text as it is, which no other
+    runtime holds. An escape of one is `_paired_escapes`'s to refuse."""
+    for c in text:
+        if 0xD800 <= ord(c) <= 0xDFFF:
+            raise ValueError("half of a UTF-16 pair stands alone in the text")
+
+
 def _read_json(text: str) -> Any:
     """One JSON text read by RFC 8259 alone, as every runtime reads it: no
     repeated name, no `NaN`, no half of a UTF-16 pair, and `-0` told from 0."""
+    _scalar_values(text)
     _paired_escapes(text)
     return json.loads(text, object_pairs_hook=_object_of_distinct_names,
                       parse_constant=_no_constant, parse_int=_whole_number)
@@ -707,7 +718,15 @@ def _decode(data: Any) -> dict:
     if data is None or data == "":
         raise TypedPayloadError("the event carries no data", RefusalCode.NOT_JSON, "")
     if isinstance(data, (bytes, bytearray)):
-        data = data.decode("utf-8", errors="replace")
+        # Bytes that are not UTF-8 are no JSON text (RFC 8259, section 8.1), and
+        # a text decoded with a substitute is not the text that was sent: refused,
+        # never repaired (docs/adr/0149, D8).
+        try:
+            data = bytes(data).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise TypedPayloadError(
+                "the event's data is not UTF-8, so it is no JSON text",
+                RefusalCode.NOT_JSON, "") from exc
     if isinstance(data, str):
         try:
             decoded = _read_json(data)

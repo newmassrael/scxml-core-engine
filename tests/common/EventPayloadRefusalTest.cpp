@@ -27,6 +27,19 @@ using SCE::Common::EventPayloadValue;
 using SCE::Common::RefusalCode;
 using Refusal = SCE::Common::EventPayloadRefusal;
 
+/**
+ * The bytes the hex digits of `hex` spell: the data a case gives as `dataHex`, a text in which a surrogate code
+ * point may stand as itself, as UTF-8 would write it were it a scalar value, which this reader is handed as the
+ * bytes they are.
+ */
+std::string bytesOfHex(const std::string &hex) {
+    std::string bytes;
+    for (size_t at = 0; at + 1 < hex.size(); at += 2) {
+        bytes += static_cast<char>(std::stoul(hex.substr(at, 2), nullptr, 16));
+    }
+    return bytes;
+}
+
 /** `v` read as the type `ty` the table describes, one call per constructor, as a generated reader reads it. */
 Refusal readDescribed(const nlohmann::json &ty, const EventPayloadValue &v) {
     if (ty.is_string()) {
@@ -162,7 +175,8 @@ TEST(EventPayloadRefusal, EveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAn
     ASSERT_GE(cases.size(), 40u) << "the table was not read from " << SCE_JSON_PAYLOAD_REFUSAL_TABLE;
     for (const auto &c : cases) {
         const std::string name = c.at("name").get<std::string>();
-        const std::string data = c.at("data").get<std::string>();
+        const std::string data =
+            c.contains("dataHex") ? bytesOfHex(c.at("dataHex").get<std::string>()) : c.at("data").get<std::string>();
         EventPayloadFields fields;
         // A case that gives a depth is read as a `<sce:lift>` of the record of the one field `v`
         // reads it (docs/adr/0087, section 2.1), its pointer held to `pathBound` bytes, the

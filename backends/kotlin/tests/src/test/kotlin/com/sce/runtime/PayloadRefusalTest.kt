@@ -77,6 +77,44 @@ class PayloadRefusalTest {
 
     private fun bound(number: Any?): Int = (number as Json.Number).text.toInt()
 
+    /**
+     * The data a case gives as `dataHex`: the bytes of a text in which a surrogate code
+     * point may stand as itself, as UTF-8 would write it were it a scalar value, read as
+     * the UTF-16 code units they spell, a surrogate code point that one unit alone and a
+     * character past U+FFFF its pair.
+     */
+    private fun unitsOfHex(hex: String): String {
+        val bytes = hex.chunked(2).map { it.toInt(16) }
+        val out = StringBuilder()
+        var at = 0
+        while (at < bytes.size) {
+            val lead = bytes[at]
+            val more = when {
+                lead >= 0xF0 -> 3
+                lead >= 0xE0 -> 2
+                lead >= 0xC0 -> 1
+                else -> 0
+            }
+            var code = when (more) {
+                3 -> lead and 0x07
+                2 -> lead and 0x0F
+                1 -> lead and 0x1F
+                else -> lead
+            }
+            for (i in 1..more) {
+                code = (code shl 6) or (bytes[at + i] and 0x3F)
+            }
+            at += more + 1
+            if (code >= 0x10000) {
+                out.append((0xD800 + ((code - 0x10000) shr 10)).toChar())
+                out.append((0xDC00 + ((code - 0x10000) and 0x3FF)).toChar())
+            } else {
+                out.append(code.toChar())
+            }
+        }
+        return out.toString()
+    }
+
     @Test
     fun `every case of the shared table is refused with its code pointer and bound`() {
         val table = Json.parse(File("tests/json_text/payload_refusal.json").readText()) as Map<*, *>
@@ -86,7 +124,7 @@ class PayloadRefusalTest {
         for (case in cases) {
             val fields = case as Map<*, *>
             val name = fields["name"] as String
-            val data = fields["data"] as String
+            val data = (fields["dataHex"] as String?)?.let { unitsOfHex(it) } ?: fields["data"] as String
             val want = fields["refusal"] as Map<*, *>?
             // A case that gives a depth is read as a `<sce:lift>` of the record of
             // the one field `v` reads it (docs/adr/0087, section 2.1).

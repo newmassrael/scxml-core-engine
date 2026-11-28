@@ -90,10 +90,11 @@
      parseText(), which holds it to RFC 8259 alone as every runtime's reader
      does (tests/json_text/payload_refusal.json): whitespace of the four kinds
      between tokens, a number in its grammar, no raw control character in a
-     text, no half of a UTF-16 pair in an escape, no repeated name. A number
-     is kept as the text it was written in (a JsonNumber), so a whole number is
-     read exactly and a fraction or an exponent where a whole number is is
-     refused, as every runtime refuses it. Before the text is read, an empty
+     text, no half of a UTF-16 pair alone, written as an escape or standing
+     raw (docs/adr/0149, D8), no repeated name. A number is kept as the text
+     it was written in (a JsonNumber), so a whole number is read exactly and
+     a fraction or an exponent where a whole number is is refused, as every
+     runtime refuses it. Before the text is read, an empty
      one is refused, and so is a container opened deeper than the schema's
      values go, over the text's brackets alone (tooDeep()).
 
@@ -142,11 +143,16 @@
      whitespace of the four kinds between tokens; a number in its grammar, kept
      as a JsonNumber; a text with no raw control character and no half of a
      UTF-16 pair in an escape; an object, of no prototype, whose names do not
-     repeat. A text that breaks any of it throws a SyntaxError saying where. */
+     repeat. A JSON text is UTF-8 (section 8.1), which spells no half of a
+     pair, so a text in which one stands alone is none. A text that breaks any
+     of it throws a SyntaxError saying where. */
   function parseText(text) {
     var at = 0;
     function malformed(what) {
       throw new SyntaxError(what);
+    }
+    if (!scalarValues(text)) {
+      malformed('half of a UTF-16 pair stands alone in the text');
     }
     function space() {
       while (at < text.length && ' \t\n\r'.indexOf(text.charAt(at)) >= 0) {
@@ -382,29 +388,6 @@
     return null;
   }
 
-  /* The UTF-8 bytes of text, or -1 for a text holding half of a UTF-16 pair,
-     which no UTF-8 spells. */
-  function utf8Length(text) {
-    var n = 0;
-    for (var i = 0; i < text.length; i++) {
-      var c = text.charCodeAt(i);
-      var next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
-      if (c < 0x80) {
-        n += 1;
-      } else if (c < 0x800) {
-        n += 2;
-      } else if (c >= 0xD800 && c <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) {
-        n += 4;
-        i++;
-      } else if (c >= 0xD800 && c <= 0xDFFF) {
-        return -1;
-      } else {
-        n += 3;
-      }
-    }
-    return n;
-  }
-
   /* The pointer to the place open stands at, as tooDeep() writes it. */
   function scanPointer(open, pathBound) {
     var pointer = '';
@@ -419,7 +402,7 @@
         } catch (e) {
           name = null;
         }
-        if (typeof name !== 'string' || name.indexOf(String.fromCharCode(0)) >= 0 || utf8Length(name) < 0) {
+        if (typeof name !== 'string' || name.indexOf(String.fromCharCode(0)) >= 0) {
           break;
         }
         token = name;

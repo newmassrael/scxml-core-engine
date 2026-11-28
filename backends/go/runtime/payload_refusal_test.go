@@ -10,6 +10,7 @@
 package sce
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +24,12 @@ import (
 type refusalCase struct {
 	Name string `json:"name"`
 	Data string `json:"data"`
-	Type any    `json:"type"`
+	// DataHex, where a case gives it in place of Data, is the hex of the bytes
+	// of a text in which a surrogate code point may stand as itself, as UTF-8
+	// would write it were it a scalar value: no text of the table holds one, and
+	// this reader is handed the bytes.
+	DataHex string `json:"dataHex"`
+	Type    any    `json:"type"`
 	// Depth, where a case gives one, has the case read as a `<sce:lift>` of the
 	// record of the one field `v` reads it (docs/adr/0087, section 2.1).
 	Depth *uint32 `json:"depth"`
@@ -164,6 +170,14 @@ func TestEveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAndBound(t *testing
 		t.Fatalf("the table lost cases: %d", len(table.Cases))
 	}
 	for _, c := range table.Cases {
+		data := c.Data
+		if c.DataHex != "" {
+			bytes, err := hex.DecodeString(c.DataHex)
+			if err != nil {
+				t.Fatalf("%s: dataHex is not hex: %v", c.Name, err)
+			}
+			data = string(bytes)
+		}
 		read := func() error {
 			var fields PayloadFields
 			var err error
@@ -172,9 +186,9 @@ func TestEveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAndBound(t *testing
 				if c.PathBound != nil {
 					pathBound = *c.PathBound
 				}
-				fields, err = LiftText(c.Data, *c.Depth, pathBound, "")
+				fields, err = LiftText(data, *c.Depth, pathBound, "")
 			} else {
-				fields, err = LiftPayload(c.Data)
+				fields, err = LiftPayload(data)
 			}
 			if err != nil {
 				return err

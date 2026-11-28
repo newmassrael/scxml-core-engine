@@ -105,6 +105,16 @@ def _declared(ty: Any) -> Any:
     raise AssertionError(f"a type of the table names no constructor: {ty!r}")
 
 
+def _data(case: Dict[str, Any]) -> str:
+    """The case's data as this reader is handed it. A case that gives
+    `dataHex` gives the bytes of a text in which a surrogate code point may
+    stand as itself, written as UTF-8 would write it were it a scalar value,
+    and is handed the code points they spell (`surrogatepass`)."""
+    if "dataHex" in case:
+        return bytes.fromhex(case["dataHex"]).decode("utf-8", "surrogatepass")
+    return case["data"]
+
+
 def _read(case: Dict[str, Any]) -> None:
     """The case read as the table says: a case that gives a depth as a
     `<sce:lift>` of the record of its one field `v` reads it (docs/adr/0087,
@@ -112,9 +122,9 @@ def _read(case: Dict[str, Any]) -> None:
     refusal's 256 where the case gives none), any other as a delivery."""
     spec = [("v", _declared(case["type"]))]
     if "depth" in case:
-        lift(lift_text(case["data"], case["depth"], case.get("pathBound", 256)), spec)
+        lift(lift_text(_data(case), case["depth"], case.get("pathBound", 256)), spec)
     else:
-        lift(case["data"], spec)
+        lift(_data(case), spec)
 
 
 @pytest.mark.parametrize("case", _load(), ids=lambda case: case["name"])
@@ -125,6 +135,25 @@ def test_every_case_is_refused_with_its_code_pointer_and_bound(case: Dict[str, A
         return
     with pytest.raises(TypedPayloadError) as refused:
         _read(case)
+    got = refused.value
+    assert (got.code.declared_name, got.pointer, got.bound) == (
+        want["code"], want["pointer"], want["bound"]), str(got)
+
+
+@pytest.mark.parametrize("case", [c for c in _load() if "dataHex" in c and "depth" not in c],
+                         ids=lambda case: case["name"])
+def test_a_delivery_handed_as_its_bytes_is_read_as_its_text_is(case: Dict[str, Any]) -> None:
+    """A delivery that crossed a wire may be handed as its bytes: they are read
+    as UTF-8, and bytes that are not UTF-8 are refused as no JSON text, never
+    repaired with a substitute (docs/adr/0149, D8)."""
+    spec = [("v", _declared(case["type"]))]
+    data = bytes.fromhex(case["dataHex"])
+    want = case.get("refusal")
+    if want is None:
+        lift(data, spec)
+        return
+    with pytest.raises(TypedPayloadError) as refused:
+        lift(data, spec)
     got = refused.value
     assert (got.code.declared_name, got.pointer, got.bound) == (
         want["code"], want["pointer"], want["bound"]), str(got)

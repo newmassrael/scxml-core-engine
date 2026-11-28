@@ -238,12 +238,40 @@ static const char *read_described(const char *type, const char *value, const cha
     return refuse_at(SCE_PAYLOAD_REFUSE_NOT_TEXT, pointer, at);
 }
 
+/* The bytes the hex digits of `hex` spell, into `out` of `cap` bytes, terminated: the data
+   a case gives as `dataHex`, a text in which a surrogate code point may stand as itself, as
+   UTF-8 would write it were it a scalar value, which this reader is handed as the bytes
+   they are. False when `hex` is no even run of hex digits, or the bytes do not fit. */
+static bool bytes_of_hex(const char *hex, char *out, size_t cap) {
+    size_t len = 0u;
+    for (; hex[0] != '\0'; hex += 2) {
+        const char pair[3] = {hex[0], hex[1], '\0'};
+        char *end = NULL;
+        const unsigned long byte = strtoul(pair, &end, 16);
+        if (hex[1] == '\0' || end != pair + 2 || len + 1u >= cap) {
+            return false;
+        }
+        out[len++] = (char)byte;
+    }
+    out[len] = '\0';
+    return true;
+}
+
 static int check_case(const char *object, int index) {
     char name[FIELD_CAP];
     char data[FIELD_CAP];
-    if (read_field(object, "name", name, sizeof(name), NULL) != NULL ||
-        read_field(object, "data", data, sizeof(data), NULL) != NULL) {
-        fprintf(stderr, "FAIL: case %d has no name or data\n", index);
+    char hex[2u * FIELD_CAP];
+    if (read_field(object, "name", name, sizeof(name), NULL) != NULL) {
+        fprintf(stderr, "FAIL: case %d has no name\n", index);
+        return 1;
+    }
+    if (member(object, "dataHex") != NULL) {
+        if (read_field(object, "dataHex", hex, sizeof(hex), NULL) != NULL || !bytes_of_hex(hex, data, sizeof(data))) {
+            fprintf(stderr, "FAIL: %s: dataHex spells no data\n", name);
+            return 1;
+        }
+    } else if (read_field(object, "data", data, sizeof(data), NULL) != NULL) {
+        fprintf(stderr, "FAIL: %s: the case has no data\n", name);
         return 1;
     }
     const char *type = member(object, "type");
