@@ -47,13 +47,20 @@
 //!   it with the entry and answers it with every read ([`JournalEntry::actor`]). Another system's
 //!   fact was said for no instance of this server, so an observation that names one is refused
 //!   ([`ObservedActor`]).
+//! * **What a decision had read is kept with it** (ADR 0116, D5). A fact a session that follows
+//!   journals said names, for each journal it follows, the position of the last entry of it the
+//!   session had taken in when its run said the fact ([`Fact::read`]): the decision's read set,
+//!   so that a reader tells a decision made after a change of what it follows from one made before
+//!   it. The store keeps them as the write gave them and answers them with every read
+//!   ([`JournalEntry::read`]). Another system's fact read no journal of this server, so an
+//!   observation that names a read is refused ([`ObservedRead`]).
 //! * **Nothing is changed or removed.** A correction is an entry. The one replacement is of the
 //!   bytes that hold an entry's data, made only from the bytes held, every other field kept
 //!   ([`JournalStore::reseal_journaled`]): how a store that seals what it keeps seals them again
 //!   under its active key (ADR 0109, D8).
 //!
 //! * [`crate::MemoryStore`] keeps the journal in the process, beside its sessions.
-//! * `SqliteStore` (feature `sqlite`) keeps it in the session store's file (layout 8).
+//! * `SqliteStore` (feature `sqlite`) keeps it in the session store's file (layouts 8, 13 and 14).
 //! * [`crate::journal_conformance`] is what every implementation is held to.
 //!
 //! [`Write::journal`]: crate::Write::journal
@@ -179,6 +186,24 @@ pub struct Fact<'a> {
     /// run that said it was made under; `None` for a fact of a run made for nobody, and for every
     /// observed one.
     pub actor: Option<Actor<'a>>,
+    /// How far the run that said it had read each journal its session follows (ADR 0116, D5), in
+    /// the order of the journals' names, each once: empty for a fact of a session that follows
+    /// none, and for every observed one.
+    pub read: &'a [Read],
+}
+
+/// How far the session that said a fact had read one journal it follows (ADR 0116, D5): the
+/// journal, a machine's name or an observed stream's, and the position of the last entry of it the
+/// session had taken in, which its checkpoint holds (ADR 0114, D4), when its run said the fact. A
+/// fact's reads are the decision's read set, what it knew of each stream it follows: an entry of
+/// that journal at or below the position was known to it, and none above (Pang et al. 2019, the
+/// zookie: an old list is not applied to new content).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Read {
+    /// The journal followed: a machine's name, or an observed stream's.
+    pub journal: String,
+    /// The position of the last entry of it the session had taken in; `0` for none.
+    pub through: u64,
 }
 
 /// Who a fact was said for (ADR 0116, D1 and D7): the instance of an open machine whose event the
@@ -266,6 +291,11 @@ pub struct JournalEntry {
     /// one among them, and in a store that wraps another and seals what it keeps, where it is
     /// inside the sealed record.
     pub actor: Option<ActorName>,
+    /// How far the session that said its fact had read each journal it follows ([`Fact::read`]),
+    /// as the write gave them; empty for a fact of a session that follows none, every observed one
+    /// among them, and in a store that wraps another and seals what it keeps, where it is inside
+    /// the sealed record.
+    pub read: Vec<Read>,
     /// Its data's bytes, which the store keeps and never reads: the fact's, or, in a store that
     /// wraps another and seals what it keeps (ADR 0109, D8), their sealed record.
     pub data: Vec<u8>,
@@ -483,6 +513,22 @@ impl fmt::Display for ObservedActor {
 
 impl Error for ObservedActor {}
 
+/// Why a store refused an observation: it names a journal its fact was decided having read, and
+/// another system's fact was decided on no journal of this server (ADR 0116, D5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedRead;
+
+impl fmt::Display for ObservedRead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "an observed fact is another system's and was decided on no journal of this server, so \
+             it names nothing it read",
+        )
+    }
+}
+
+impl Error for ObservedRead {}
+
 /// Why a store refused to give a position: it gave the last position there is, and it gives none
 /// twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -555,9 +601,10 @@ pub trait JournalStore: SessionStore {
     /// for that id, appending nothing ([`Observation::Repeated`]). The only way an observed stream
     /// is written.
     ///
-    /// Refused ([`SessionsStream`]) when a machine of that name has entries in the journal, and
-    /// ([`ObservedActor`]) when the fact names who it was said for ([`Fact::actor`]), whatever the
-    /// stream holds.
+    /// Refused ([`SessionsStream`]) when a machine of that name has entries in the journal,
+    /// ([`ObservedActor`]) when the fact names who it was said for ([`Fact::actor`]), and
+    /// ([`ObservedRead`]) when it names a journal it was decided having read ([`Fact::read`]),
+    /// whatever the stream holds.
     fn observe(
         &self,
         name: &str,
@@ -605,6 +652,7 @@ mod tests {
             revision: 1,
             valid_ms,
             actor: None,
+            read: Vec::new(),
             data: Vec::new(),
         }
     }

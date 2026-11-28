@@ -10,15 +10,18 @@
 //!   or `[kind, first, second, schema, revision, data, valid_ms]` for a fact with a valid time, or
 //!   `[kind, first, second, schema, revision, data, valid_ms, actor]` for a fact said for a person
 //!   (ADR 0116, D7), `valid_ms` `null` where it has none and `actor` the array
-//!   `[instance, issuer, subject, proved_ms, method]`:
+//!   `[instance, issuer, subject, proved_ms, method]`, or
+//!   `[kind, first, second, schema, revision, data, valid_ms, actor, read]` for a fact decided having
+//!   read the journals its session follows (ADR 0116, D5), `actor` `null` where it names no one too
+//!   and `read` the array of `[journal, through]` in the order the write gave them:
 //!   `kind` is 0 for a session's, whose `first` and `second` are the machine and the key, and 1 for
 //!   an observed one, whose are the stream's name and the origin id. It is sealed for the store
 //!   [`STORE_JOURNAL`] and the row of the stream's entries and the position (each entry, a colon,
 //!   and the position's decimal digits), so data moved to another position or another stream does
 //!   not open.
 //! - Its position and its recorded moment are the wrapped store's, which orders by them, in the
-//!   clear; its schema, its revision, its valid time and who it was said for are inside the record
-//!   alone, and the wrapped store is given none of them.
+//!   clear; its schema, its revision, its valid time, who it was said for and what it was decided
+//!   having read are inside the record alone, and the wrapped store is given none of them.
 //!
 //! The wrapped store gives a position inside the transaction that writes the entry, so the record
 //! is made there, by the wrapped store's call ([`AtPosition`]).
@@ -34,11 +37,11 @@ use sce_forge_runtime::cbor::{
     read_array_len, read_bytes, read_int_within, read_text, read_uint, read_uint_upto, take_null,
     write_array_head, write_bytes, write_int, write_null, write_text, write_uint,
 };
-use sce_forge_runtime::codec::CodecError;
+use sce_forge_runtime::codec::{CodecError, SceCursor};
 use sce_rust_session_store::{
     Actor, ActorName, AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Failure, Journal,
-    JournalEntry, JournalPage, JournalStore, Observation, ObservedActor, Person, SessionStore,
-    Stream, StreamName,
+    JournalEntry, JournalPage, JournalStore, Observation, ObservedActor, ObservedRead, Person,
+    Read, SessionStore, Stream, StreamName,
 };
 use zeroize::Zeroizing;
 
@@ -71,6 +74,7 @@ struct Opened {
     revision: u32,
     valid_ms: Option<i64>,
     actor: Option<ActorName>,
+    read: Vec<Read>,
     data: Vec<u8>,
 }
 
@@ -85,14 +89,15 @@ impl Opened {
     }
 }
 
-/// The payload of `data`, a fact of `named` with the schema, the revision, the valid time and who
-/// it was said for given.
+/// The payload of `data`, a fact of `named` with the schema, the revision, the valid time, who it
+/// was said for and what it was decided having read given.
 fn payload(
     named: Named<'_>,
     schema: &str,
     revision: u32,
     valid_ms: Option<i64>,
     actor: Option<Actor<'_>>,
+    read: &[Read],
     data: &[u8],
 ) -> Zeroizing<Vec<u8>> {
     let (kind, first, second) = match named {
@@ -103,12 +108,14 @@ fn payload(
     let actor_texts = actor.map_or(0, |actor| {
         actor.instance.len() + actor.issuer.len() + actor.subject.len() + actor.method.len()
     });
-    let items = match (valid_ms, actor) {
-        (_, Some(_)) => 8,
-        (Some(_), None) => 7,
-        (None, None) => 6,
+    let read_texts: usize = read.iter().map(|each| each.journal.len() + 12).sum();
+    let items = match (valid_ms, actor, read.is_empty()) {
+        (_, _, false) => 9,
+        (_, Some(_), true) => 8,
+        (Some(_), None, true) => 7,
+        (None, None, true) => 6,
     };
-    encoded(texts + actor_texts + data.len() + 96, |w| {
+    encoded(texts + actor_texts + read_texts + data.len() + 96, |w| {
         put(write_array_head(w, items));
         put(write_uint(w, kind));
         put(write_text(w, first));
@@ -116,27 +123,74 @@ fn payload(
         put(write_text(w, schema));
         put(write_uint(w, u64::from(revision)));
         put(write_bytes(w, data));
-        match (valid_ms, actor) {
-            (Some(valid_ms), _) => put(write_int(w, valid_ms)),
-            (None, Some(_)) => put(write_null(w)),
-            (None, None) => {}
+        match valid_ms {
+            Some(valid_ms) => put(write_int(w, valid_ms)),
+            None if items >= 8 => put(write_null(w)),
+            None => {}
         }
-        if let Some(actor) = actor {
-            put(write_array_head(w, 5));
-            put(write_text(w, actor.instance));
-            put(write_text(w, actor.issuer));
-            put(write_text(w, actor.subject));
-            put(write_uint(w, actor.proved_ms));
-            put(write_text(w, actor.method));
+        match actor {
+            Some(actor) => {
+                put(write_array_head(w, 5));
+                put(write_text(w, actor.instance));
+                put(write_text(w, actor.issuer));
+                put(write_text(w, actor.subject));
+                put(write_uint(w, actor.proved_ms));
+                put(write_text(w, actor.method));
+            }
+            None if items == 9 => put(write_null(w)),
+            None => {}
+        }
+        if items == 9 {
+            put(write_array_head(w, read.len() as u64));
+            for each in read {
+                put(write_array_head(w, 2));
+                put(write_text(w, &each.journal));
+                put(write_uint(w, each.through));
+            }
         }
     })
+}
+
+/// Who a fact was said for, as a payload holds it: `[instance, issuer, subject, proved_ms, method]`.
+fn actor_of(c: &mut SceCursor<'_>) -> Result<ActorName, CodecError> {
+    if read_array_len(c)? != 5 {
+        return Err(CodecError::CborWrongLength);
+    }
+    let instance = read_text(c, None)?.to_string();
+    let issuer = read_text(c, None)?.to_string();
+    let subject = read_text(c, None)?.to_string();
+    let proved_ms = read_uint(c)?;
+    let method = read_text(c, None)?.to_string();
+    Ok(ActorName {
+        instance,
+        person: Person {
+            issuer,
+            subject,
+            proved_ms,
+            method,
+        },
+    })
+}
+
+/// What a fact was decided having read, as a payload holds it: an array of `[journal, through]`.
+fn read_of(c: &mut SceCursor<'_>) -> Result<Vec<Read>, CodecError> {
+    let mut read = Vec::new();
+    for _ in 0..read_array_len(c)? {
+        if read_array_len(c)? != 2 {
+            return Err(CodecError::CborWrongLength);
+        }
+        let journal = read_text(c, None)?.to_string();
+        let through = read_uint(c)?;
+        read.push(Read { journal, through });
+    }
+    Ok(read)
 }
 
 /// What the payload `plaintext` holds.
 fn opened(plaintext: &[u8]) -> Result<Opened, SealError> {
     decoded(plaintext, |c| {
         let items = read_array_len(c)?;
-        if !(6..=8).contains(&items) {
+        if !(6..=9).contains(&items) {
             return Err(CodecError::CborWrongLength);
         }
         let kind = read_uint_upto(c, KIND_OBSERVED)?;
@@ -146,33 +200,20 @@ fn opened(plaintext: &[u8]) -> Result<Opened, SealError> {
         let revision = u32::try_from(read_uint_upto(c, u64::from(u32::MAX))?)
             .map_err(|_| CodecError::CborOutOfRange)?;
         let data = read_bytes(c, None)?.to_vec();
-        // The valid time, written as `null` in a payload of eight items whose fact has none.
-        let valid_ms = if items == 6 || (items == 8 && take_null(c)?) {
+        // The valid time, written as `null` in a payload of eight or nine items whose fact has
+        // none.
+        let valid_ms = if items == 6 || (items >= 8 && take_null(c)?) {
             None
         } else {
             Some(read_int_within(c, i64::MIN, i64::MAX)?)
         };
-        let actor = if items == 8 {
-            if read_array_len(c)? != 5 {
-                return Err(CodecError::CborWrongLength);
-            }
-            let instance = read_text(c, None)?.to_string();
-            let issuer = read_text(c, None)?.to_string();
-            let subject = read_text(c, None)?.to_string();
-            let proved_ms = read_uint(c)?;
-            let method = read_text(c, None)?.to_string();
-            Some(ActorName {
-                instance,
-                person: Person {
-                    issuer,
-                    subject,
-                    proved_ms,
-                    method,
-                },
-            })
+        // Who it was said for, written as `null` in a payload of nine items whose fact names no one.
+        let actor = if items == 8 || (items == 9 && !take_null(c)?) {
+            Some(actor_of(c)?)
         } else {
             None
         };
+        let read = if items == 9 { read_of(c)? } else { Vec::new() };
         let (stream, origin) = if kind == KIND_SESSION {
             (
                 StreamName::Session {
@@ -191,6 +232,7 @@ fn opened(plaintext: &[u8]) -> Result<Opened, SealError> {
             revision,
             valid_ms,
             actor,
+            read,
             data,
         })
     })
@@ -226,6 +268,7 @@ impl<S: SessionStore> AtPosition for SealedFact<'_, S> {
                 self.fact.revision,
                 self.fact.valid_ms,
                 self.fact.actor,
+                self.fact.read,
                 &data,
             ),
         )
@@ -241,6 +284,7 @@ impl<S: SessionStore> SealedFact<'_, S> {
             data: FactData::AtPosition(self),
             valid_ms: None,
             actor: None,
+            read: &[],
         }
     }
 }
@@ -325,6 +369,7 @@ impl<S> Sealed<S> {
             revision: held.revision,
             valid_ms: held.valid_ms,
             actor: held.actor,
+            read: held.read,
             data: held.data,
         })
     }
@@ -441,6 +486,9 @@ impl<S: JournalStore> JournalStore for Sealed<S> {
         if fact.actor.is_some() {
             return Err(Failure::new(ObservedActor));
         }
+        if !fact.read.is_empty() {
+            return Err(Failure::new(ObservedRead));
+        }
         let stream = Stream::Observed { name };
         let sealed = SealedFact {
             sealed: self,
@@ -483,6 +531,7 @@ impl<S: JournalStore> JournalStore for Sealed<S> {
                 opened.revision,
                 opened.valid_ms,
                 opened.actor.as_ref().map(ActorName::actor),
+                &opened.read,
                 data,
             ),
         )?;

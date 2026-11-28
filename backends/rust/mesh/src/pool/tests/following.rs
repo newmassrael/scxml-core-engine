@@ -376,6 +376,7 @@ fn an_entry_no_session_can_take_is_told_and_passed() {
                 data: FactData::Bytes(b"elsewhere"),
                 valid_ms: None,
                 actor: None,
+                read: &[],
             },
             clock.at(),
         )

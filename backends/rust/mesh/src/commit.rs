@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 
 use sce_rust_metrics::{Histogram, Metrics};
 use sce_rust_session_store::{
-    ActorName, Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal,
+    ActorName, Append, Batched, Change, Committed, Decided, Fact, FactData, Failure, Journal, Read,
     SessionStore, Under, Write, WriteError, Written,
 };
 
@@ -115,6 +115,8 @@ struct HeldFact {
     valid_ms: Option<i64>,
     /// Who the fact was said for (docs/adr/0116, D7).
     actor: Option<ActorName>,
+    /// What it was decided having read (docs/adr/0116, D5).
+    read: Vec<Read>,
 }
 
 impl HeldJournal {
@@ -132,6 +134,7 @@ impl HeldJournal {
                     data: data.to_vec(),
                     valid_ms: fact.valid_ms,
                     actor: fact.actor.map(|actor| actor.to_name()),
+                    read: fact.read.to_vec(),
                 }),
                 FactData::AtPosition(_) => Err(Failure::new(
                     "a fact handed to the committer gives its bytes, not what makes them",
@@ -211,6 +214,7 @@ impl HeldWrite {
                 data: FactData::Bytes(&fact.data),
                 valid_ms: fact.valid_ms,
                 actor: fact.actor.as_ref().map(ActorName::actor),
+                read: &fact.read,
             })
             .collect()
     }
@@ -750,7 +754,8 @@ mod tests {
     /// docs/adr/0114, D1: the facts a write gives the committer are appended with it, as it gave
     /// them, through the batch that commits it; a fact whose bytes are made at its position is
     /// refused, and its write with it. Red if the committer drops a write's journal, which loses
-    /// the entries of a state that is kept, or who a fact was said for (docs/adr/0116, D7).
+    /// the entries of a state that is kept, who a fact was said for (docs/adr/0116, D7), or what it
+    /// was decided having read (D5).
     #[test]
     fn a_write_handed_to_the_committer_keeps_its_facts() {
         use sce_rust_session_store::{Actor, AtPosition, JournalStore, Stream};
@@ -767,6 +772,10 @@ mod tests {
         gated.open();
         let committer = committer(&gated, Duration::ZERO);
         let k = lease(&store, "k");
+        let read = [Read {
+            journal: "directory".to_string(),
+            through: 41,
+        }];
         let fact = Fact {
             schema: "entry.recorded",
             revision: 2,
@@ -779,6 +788,7 @@ mod tests {
                 proved_ms: 7,
                 method: "pwd",
             }),
+            read: &read,
         };
         let made = Fact {
             data: FactData::AtPosition(&Made),
@@ -833,6 +843,10 @@ mod tests {
                 .map(|actor| (actor.instance.as_str(), actor.person.subject.as_str())),
             Some(("a1", "alice")),
             "the committer dropped who the fact was said for"
+        );
+        assert_eq!(
+            entries[0].read, read,
+            "the committer dropped what the fact was decided having read"
         );
     }
 

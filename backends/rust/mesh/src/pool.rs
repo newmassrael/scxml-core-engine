@@ -206,7 +206,7 @@ use sce_rust_runtime::saved_state::{SavedInvokes, SavedState};
 use sce_rust_runtime::Principal;
 use sce_rust_session_store::{
     AcquireError, Actor, Append, Change, Conflict, Expiry, Fact, FactData, Failure, Held, Journal,
-    JournalStore, LeaseError, MembershipStore, SessionStore, Under, Write, WriteError,
+    JournalStore, LeaseError, MembershipStore, Read, SessionStore, Under, Write, WriteError,
     LATEST_MOMENT,
 };
 
@@ -673,9 +673,10 @@ struct Live<M, T, E> {
     /// keeps what the machine made of them.
     notes_through: u64,
     /// The entries of the event journal its runs made that no durable write
-    /// appended yet (docs/adr/0114, D1): the next write of the session, which
-    /// keeps the state that made them, appends them.
-    facts: Vec<JournalEntry>,
+    /// appended yet (docs/adr/0114, D1), each with what it was decided having
+    /// read (docs/adr/0116, D5): the next write of the session, which keeps the
+    /// state that made them, appends them.
+    facts: Vec<Said>,
     /// For each journal the session follows, the position of the last entry it
     /// took in (docs/adr/0114, D4): written with what it did, in the checkpoint.
     followed: BTreeMap<String, u64>,
@@ -2604,8 +2605,16 @@ where
         loop {
             stepped |= session.machine.run(calls, now);
             // docs/adr/0114, D1: what the run said is appended with the state
-            // it left, by the session's next write.
-            session.facts.extend(session.machine.take_journal());
+            // it left, by the session's next write; docs/adr/0116, D5: with how
+            // far the session had read each journal it follows as it said it.
+            let said = session.machine.take_journal();
+            if !said.is_empty() {
+                let read = reads_of(&session.followed);
+                session.facts.extend(said.into_iter().map(|entry| Said {
+                    entry,
+                    read: read.clone(),
+                }));
+            }
             let mut endpoint = lock(&session.endpoint);
             self.report(key, &mut endpoint);
             self.learn(key, &mut endpoint);
@@ -3094,11 +3103,30 @@ where
     }
 }
 
-/// The facts `entries` say, in their order, as a write appends them.
-fn facts_of(entries: &[JournalEntry]) -> Vec<Fact<'_>> {
-    entries
+/// A fact a session's run said that no durable write appended yet: the engine's entry, and how
+/// far the session had read each journal it follows when the run said it (docs/adr/0116, D5).
+struct Said {
+    entry: JournalEntry,
+    read: Vec<Read>,
+}
+
+/// How far a session whose checkpoint holds `followed` has read each journal it follows
+/// (docs/adr/0114, D4), as a fact it says records it (docs/adr/0116, D5): in the order of the
+/// journals' names, each once.
+fn reads_of(followed: &BTreeMap<String, u64>) -> Vec<Read> {
+    followed
         .iter()
-        .map(|entry| Fact {
+        .map(|(journal, through)| Read {
+            journal: journal.clone(),
+            through: *through,
+        })
+        .collect()
+}
+
+/// The facts `said` holds, in their order, as a write appends them.
+fn facts_of(said: &[Said]) -> Vec<Fact<'_>> {
+    said.iter()
+        .map(|Said { entry, read }| Fact {
             schema: entry.schema,
             revision: entry.revision,
             data: FactData::Bytes(&entry.data),
@@ -3112,6 +3140,8 @@ fn facts_of(entries: &[JournalEntry]) -> Vec<Fact<'_>> {
                 proved_ms: person.proved_ms,
                 method: &person.method,
             }),
+            // docs/adr/0116, D5: what the decision had read of the journals the session follows.
+            read: read.as_slice(),
         })
         .collect()
 }
@@ -3290,6 +3320,7 @@ mod tests {
 
     mod following;
     mod journal;
+    mod reading;
 
     /// The wall clock every test starts at.
     const T0: u64 = 1_700_000_000_000;

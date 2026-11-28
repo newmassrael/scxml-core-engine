@@ -342,7 +342,10 @@ fn a_fact_said_for_a_person_is_written_as_said_for_them() {
         valid_ms: None,
         principal: principal.map(Box::new),
     };
-    let entries = [said(Some(alice)), said(None)];
+    let entries = [said(Some(alice)), said(None)].map(|entry| Said {
+        entry,
+        read: Vec::new(),
+    });
     let store = MemoryStore::new();
     let lease = store
         .acquire("r1", "p1", LEASE_TTL_MS, 0)

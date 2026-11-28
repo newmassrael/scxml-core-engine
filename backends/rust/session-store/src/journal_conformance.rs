@@ -40,6 +40,9 @@
 //!   the bytes it keeps.
 //! * [`who_a_fact_was_said_for_is_kept_with_it`] (ADR 0116, D7): who a fact was said for is kept
 //!   with its entry and answered by every read, and an observation that names one is refused.
+//! * [`what_a_fact_was_decided_having_read_is_kept_with_it`] (ADR 0116, D5): what a fact was
+//!   decided having read is kept with its entry and answered by every read, and an observation
+//!   that names a read is refused.
 //! * [`data_is_replaced_only_from_what_it_holds`] (ADR 0109, D8): an entry's data is replaced only
 //!   from the bytes it holds, every other field kept.
 //! * [`handles_share_the_journal`]: what one handle appended, another reads.
@@ -58,7 +61,7 @@ use std::thread;
 use crate::batch::{Batched, Committed, Decided};
 use crate::journal::{
     Actor, ActorName, AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal,
-    JournalEntry, JournalPage, JournalStore, Observation, PastHorizon, Stream, StreamName,
+    JournalEntry, JournalPage, JournalStore, Observation, PastHorizon, Read, Stream, StreamName,
 };
 use crate::outbox::{Append, Write, Written};
 use crate::{Conflict, Failure, Lease, SessionStore, Stored, WriteError, LATEST_MOMENT};
@@ -130,6 +133,7 @@ fn fact(data: &[u8]) -> Fact<'_> {
         data: FactData::Bytes(data),
         valid_ms: None,
         actor: None,
+        read: &[],
     }
 }
 
@@ -326,6 +330,7 @@ pub fn an_entry_is_made_by_its_sessions_write_or_not_at_all(harness: &impl Journ
             revision,
             valid_ms,
             actor: None,
+            read: Vec::new(),
             data: data.to_vec(),
         }
     };
@@ -1361,6 +1366,105 @@ pub fn who_a_fact_was_said_for_is_kept_with_it(harness: &impl JournalHarness) {
     );
 }
 
+/// ADR 0116, D5: what a fact was decided having read is kept with its entry as the write gave it,
+/// in its order, and answered by every read: in the order of the journal, in its stream's and in
+/// an answer as of a moment; a fact that read nothing beside it is answered with nothing; and an
+/// entry's data replaced keeps it. An observation that names a read is refused and appends
+/// nothing, for an origin id the stream holds as well: another system's fact was decided on no
+/// journal of this server.
+pub fn what_a_fact_was_decided_having_read_is_kept_with_it(harness: &impl JournalHarness) {
+    let store = harness.handle();
+    let held = lease(&store, "k");
+    let through = |journal: &str, position: u64| Read {
+        journal: journal.to_string(),
+        through: position,
+    };
+    let both = [through("directory", 7), through("tellers", 40)];
+    let one = [through("directory", 9)];
+    let facts = [
+        Fact {
+            read: &both,
+            ..fact(b"after both")
+        },
+        fact(b"read nothing"),
+        Fact {
+            read: &one,
+            ..dated(b"after one", 5)
+        },
+    ];
+    store
+        .write("k", &keeps(b"s", 0, held.fence, &facts, 1_000))
+        .expect("a write of facts decided having read");
+    let kept = |entries: &[JournalEntry]| -> Vec<(String, Vec<Read>)> {
+        texts(entries)
+            .into_iter()
+            .zip(entries.iter().map(|entry| entry.read.clone()))
+            .collect()
+    };
+    let in_order = vec![
+        ("after both".to_string(), both.to_vec()),
+        ("read nothing".to_string(), Vec::new()),
+        ("after one".to_string(), one.to_vec()),
+    ];
+    assert_eq!(kept(&all(&store)), in_order, "the journal's order");
+    assert_eq!(
+        kept(&all_of(&store, of_session("k"))),
+        in_order,
+        "the stream's order"
+    );
+    let last = last_position(&store);
+    assert_eq!(
+        kept(&answer(&store, of_session("k"), last, 1_000)),
+        vec![
+            ("after one".to_string(), one.to_vec()),
+            ("after both".to_string(), both.to_vec()),
+            ("read nothing".to_string(), Vec::new()),
+        ],
+        "an answer as of a moment, ordered by when each holds from"
+    );
+    store
+        .observe("bank", "tx-1", &fact(b"observed"), 2_000)
+        .expect("an observation that names no read");
+    let before = all(&store);
+    assert!(
+        store
+            .observe(
+                "bank",
+                "tx-2",
+                &Fact {
+                    read: &one,
+                    ..fact(b"forged")
+                },
+                3_000,
+            )
+            .is_err(),
+        "an observation that names a read was kept"
+    );
+    assert!(
+        store
+            .observe(
+                "bank",
+                "tx-1",
+                &Fact {
+                    read: &one,
+                    ..fact(b"observed")
+                },
+                3_000,
+            )
+            .is_err(),
+        "an observation that names a read was answered as a repeat"
+    );
+    assert_eq!(all(&store), before, "a refused observation appended");
+    assert!(store
+        .reseal_journaled(before[0].position, b"after both", b"after both again")
+        .expect("a replacement the store could make or refuse"));
+    assert_eq!(
+        all(&harness.handle())[0].read,
+        both.to_vec(),
+        "a replacement of the data dropped what the fact was decided having read"
+    );
+}
+
 /// ADR 0109, D8: an entry's data is replaced only from the bytes it holds, every other field kept:
 /// a replacement made from bytes another one already replaced writes nothing.
 pub fn data_is_replaced_only_from_what_it_holds(harness: &impl JournalHarness) {
@@ -1536,7 +1640,8 @@ mod tests {
     use super::*;
     use crate::journal::recorded;
     use crate::{
-        AcquireError, Due, LeaseError, MemoryStore, ObservedActor, ObservedStream, SessionsStream,
+        AcquireError, Due, LeaseError, MemoryStore, ObservedActor, ObservedRead, ObservedStream,
+        SessionsStream,
     };
 
     /// How a store breaks the contract, if it does.
@@ -1559,6 +1664,8 @@ mod tests {
         LeavesAnAbandonedTransactionOpen,
         /// Who a fact was said for is not kept.
         ForgetsWhoAFactWasSaidFor,
+        /// What a fact was decided having read is not kept.
+        ForgetsWhatAFactRead,
     }
 
     /// A store that numbers the entries of a transaction as it begins and makes them visible as it
@@ -1647,6 +1754,11 @@ mod tests {
                     .actor
                     .filter(|_| self.breach != Breach::ForgetsWhoAFactWasSaidFor)
                     .map(Actor::to_name),
+                read: if self.breach == Breach::ForgetsWhatAFactRead {
+                    Vec::new()
+                } else {
+                    fact.read.to_vec()
+                },
                 data: fact.data.at(position)?.into_owned(),
             })
         }
@@ -1858,6 +1970,9 @@ mod tests {
             if fact.actor.is_some() {
                 return Err(Failure::new(ObservedActor));
             }
+            if !fact.read.is_empty() {
+                return Err(Failure::new(ObservedRead));
+            }
             let mut numbers = self.numbers();
             let stream = Stream::Observed { name };
             for entry in numbers.entries.values() {
@@ -1982,6 +2097,7 @@ mod tests {
         a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
         a_fact_is_kept_with_the_bytes_made_for_its_position,
         who_a_fact_was_said_for_is_kept_with_it,
+        what_a_fact_was_decided_having_read_is_kept_with_it,
         data_is_replaced_only_from_what_it_holds,
         handles_share_the_journal,
         a_reader_keeps_how_far_it_read,
@@ -2044,6 +2160,14 @@ mod tests {
     #[should_panic(expected = "the journal's order")]
     fn a_store_that_forgets_who_a_fact_was_said_for_is_refused() {
         super::who_a_fact_was_said_for_is_kept_with_it(&broken(Breach::ForgetsWhoAFactWasSaidFor));
+    }
+
+    #[test]
+    #[should_panic(expected = "the journal's order")]
+    fn a_store_that_forgets_what_a_fact_read_is_refused() {
+        super::what_a_fact_was_decided_having_read_is_kept_with_it(&broken(
+            Breach::ForgetsWhatAFactRead,
+        ));
     }
 
     #[test]

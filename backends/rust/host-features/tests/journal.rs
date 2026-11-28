@@ -46,6 +46,7 @@ fn journal() -> Arc<MemoryStore> {
                     data: FactData::Bytes(data),
                     valid_ms,
                     actor: None,
+                    read: &[],
                 },
                 now_ms,
             )
@@ -140,6 +141,7 @@ fn a_reading_is_pages_of_one_moment_in_the_order_facts_hold() {
                 data: FactData::Bytes(b"four"),
                 valid_ms: Some(0),
                 actor: None,
+                read: &[],
             },
             4_000,
         )

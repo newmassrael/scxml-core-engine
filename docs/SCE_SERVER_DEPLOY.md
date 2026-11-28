@@ -12,7 +12,7 @@ a generated machine is served by SCE's adapter (section 1), and the upgrade in p
 
 Amended by ADR 0116 (`docs/adr/0116-a-person-stands-behind-an-instance-by-a-delegation-the-server-holds-and-what-a-document-reads-of-them-no-sender-can-write.md`):
 the store keeps who each fact of the journal was said for (layout 13, section 3), and the audit log who each entry a
-run appended was made for (D7).
+run appended was made for (D7); and what each fact was decided having read (layout 14, section 3; D5).
 
 Amended by ADR 0109 (`docs/adr/0109-a-server-on-the-public-network-keeps-what-it-owes-bounds-what-its-clients-cost-and-is-upgraded-in-place.md`),
 and brought to every step of it that landed by its step 15:
@@ -406,14 +406,15 @@ with `SqliteStore::open(path)`, which makes the file when it is not there.
   one sync of the log at the commit. A write refused for its version or its fence, or one the database refuses part
   of the way through, is rolled back to its savepoint and answered alone; the others commit. Section 3.1 says when a
   batch holds more than one write, and how to measure what it buys.
-- **Its layout.** The database's `user_version` names the layout, `13` today. A file of layout `1` to `12` is brought
-  to `13` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes, values, audit log,
+- **Its layout.** The database's `user_version` names the layout, `14` today. A file of layout `1` to `13` is brought
+  to `14` when it is opened, in one transaction, its sessions, leases, keys, credentials, outboxes, values, audit log,
   journal and members kept; layout 12 keeps a session by its machine and its key (ADR 0114, D2), and the sessions of
   an earlier file are the one machine's the empty name stands for, which `SqliteStore::open` gives a handle of;
   layout 13 keeps who each fact of the journal was said for (ADR 0116, D7), and an entry of an earlier file was said
-  for nobody. A file of a layout this build does not know, or one that holds tables the store did not make, is
+  for nobody; layout 14 keeps what each fact was decided having read (ADR 0116, D5), and an entry of an earlier file
+  read nothing. A file of a layout this build does not know, or one that holds tables the store did not make, is
   refused. A later build that changes the layout makes a rollback to an earlier build refuse the file: a build before
-  layout 13 refuses a file this one opened.
+  layout 14 refuses a file this one opened.
 - **The outboxes** (ADR 0109, D10). Under `receipt: durable` what a session sends a client is appended to the
   client's outbox by the same transaction that writes the session's checkpoint (`SessionStore::write`), so either
   both are durable or neither; an acknowledgement deletes what it covers, and an expiry what is older than
@@ -479,6 +480,7 @@ value; a column the last column does not name is kept in the clear, since the st
 | 8, the event journal (`JournalStore`, ADR 0114) | `journal_head` (`issued`, `recorded_ms`), the last position given and the last moment recorded; `journal_entries` (`position`, `recorded_ms`, `name`, `key`, `origin`, `schema`, `revision`, `valid_ms`, `holds_ms`, `data`), a session's entry under its machine's `name` and its `key`, an observed stream's under its `name` and the other system's `origin`; `holds_ms` the valid time, or the recorded moment where there is none; never deleted | `name`, `key` and `origin` entries, `data` a record; `schema` empty, `revision` 0, `valid_ms` null and `holds_ms` the recorded moment |
 | 12, a session by its machine and its key, and the journal's readers (ADR 0114, D2 and D4) | `sessions` and `leases` keyed by `machine` and `session`, the rows of an earlier file under the empty `machine`; `outbox_notes` and `outbox_entries` gain `machine`, that of the session a note is for or an entry was sent by; `journal_readers` (`reader`, `position`), how far each reader of the journal has taken in every entry it reads, which only rises | `machine` kept as the handle names it, and a session's record bound to it (`docs/SCE_SEALED_RECORD.md` section 3); a reader's `reader` an entry |
 | 13, who a fact of the journal was said for (ADR 0116, D7) | `journal_entries` gains `actor_instance`, `actor_issuer`, `actor_subject`, `actor_proved_ms` and `actor_method`: the instance whose event the run that said the fact took in and the person its incarnation acted for, all five or none; none for an observed entry and for an entry of an earlier file | all five null: who a fact was said for is inside the entry's `data` record |
+| 14, what a fact of the journal was decided having read (ADR 0116, D5) | `journal_reads` (`position`, `n`, `journal`, `through`): for the entry at `position`, the `n`th journal its session follows, in the order the write gave them, and the position of the last entry of it the session had taken in when its run said the fact; none for an observed entry and for an entry of an earlier file | no row: what a fact was decided having read is inside the entry's `data` record |
 
 Every moment is milliseconds since the Unix epoch.
 

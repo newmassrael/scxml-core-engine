@@ -142,7 +142,7 @@ pub use credentials::{
 pub use journal::{
     Actor, ActorName, AsOf, AsOfCursor, AsOfError, AtPosition, Fact, FactData, Journal,
     JournalEntry, JournalPage, JournalStore, NoJournal, NoPositionLeft, Observation, ObservedActor,
-    ObservedStream, PastHorizon, SessionsStream, Stream, StreamName,
+    ObservedRead, ObservedStream, PastHorizon, Read, SessionsStream, Stream, StreamName,
 };
 pub use keys::{KeyRow, KeyState, KeyStore, KeyUse, MemoryKeys};
 pub use kv::{Identity, KvEntry, KvStore, Put, PutIf};

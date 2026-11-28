@@ -722,6 +722,7 @@ mod journal_in_memory {
             a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
             a_fact_is_kept_with_the_bytes_made_for_its_position,
             who_a_fact_was_said_for_is_kept_with_it,
+            what_a_fact_was_decided_having_read_is_kept_with_it,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
             a_reader_keeps_how_far_it_read,
@@ -748,6 +749,7 @@ mod journal_on_sqlite {
             a_write_stopped_partway_leaves_its_state_and_its_entries_or_neither,
             a_fact_is_kept_with_the_bytes_made_for_its_position,
             who_a_fact_was_said_for_is_kept_with_it,
+            what_a_fact_was_decided_having_read_is_kept_with_it,
             data_is_replaced_only_from_what_it_holds,
             handles_share_the_journal,
             a_reader_keeps_how_far_it_read,
@@ -971,7 +973,7 @@ mod journal_sealed {
     use sce_rust_crypto::sealed::{record_key_id, Resealed, Sealed};
     use sce_rust_session_store::{
         Actor, AsOf, AsOfCursor, Fact, FactData, Journal, JournalEntry, JournalStore, MemoryStore,
-        SessionStore, Stream, StreamName, Write, LATEST_MOMENT,
+        Read, SessionStore, Stream, StreamName, Write, LATEST_MOMENT,
     };
 
     use super::{first_keys, keys_of, on_sqlite, ID_1, ID_2, KEY_1, KEY_2};
@@ -983,6 +985,7 @@ mod journal_sealed {
             data: FactData::Bytes(data),
             valid_ms,
             actor: None,
+            read: &[],
         }
     }
 
@@ -1135,6 +1138,65 @@ mod journal_sealed {
             [
                 (None, Some(alice.to_name())),
                 (Some(-5), Some(alice.to_name()))
+            ]
+        );
+    }
+
+    /// ADR 0116, D5: what a fact was decided having read is sealed inside its record, with a valid
+    /// time and who it was said for or without either: the wrapped store is given no read, the
+    /// file holds the name of no journal a fact read in the clear, and the sealing store answers
+    /// them. Red if the payload leaves the read out, or the wrapped store is given it.
+    #[test]
+    fn what_a_fact_was_decided_having_read_is_inside_its_record() {
+        let harness = on_sqlite("journal-read");
+        let store = harness.sealed();
+        let read = [Read {
+            journal: "journal-of-the-directory".to_string(),
+            through: 41,
+        }];
+        let alice = Actor {
+            instance: "a1",
+            issuer: "https://id.example",
+            subject: "alice",
+            proved_ms: 1_700_000_000_000,
+            method: "pwd",
+        };
+        written(
+            &store,
+            "k",
+            &[
+                Fact {
+                    read: &read,
+                    ..fact(b"undated", None)
+                },
+                Fact {
+                    read: &read,
+                    actor: Some(alice),
+                    ..fact(b"dated", Some(-5))
+                },
+            ],
+        );
+        let kept = store.inner().after(0, 10).expect("the wrapped journal");
+        assert!(
+            kept.entries.iter().all(|entry| entry.read.is_empty()),
+            "the wrapped store was given what a fact was decided having read"
+        );
+        drop(store);
+        let medium = harness.0.every_byte();
+        let clear = b"journal-of-the-directory";
+        assert!(
+            !medium.windows(clear.len()).any(|window| window == clear),
+            "a journal a fact read is in the clear on the medium"
+        );
+        let entries = all(&harness.sealed());
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.valid_ms, entry.actor.clone(), entry.read.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (None, None, read.to_vec()),
+                (Some(-5), Some(alice.to_name()), read.to_vec())
             ]
         );
     }
