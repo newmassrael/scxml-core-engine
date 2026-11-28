@@ -457,16 +457,6 @@ pub struct HostInvokeRequest {
     ///
     /// [`Engine::complete_host_invoke_in`]: crate::Engine::complete_host_invoke_in
     pub session_id: String,
-    /// The person the macrostep that started the invocation acts for, with the
-    /// instance that acts for them (docs/adr/0116, D7), or `None` for one made
-    /// for nobody: whom a host that records who did what records the work as
-    /// done for (the audit log, docs/SCE_HOST_FEATURES.md section 15). The
-    /// engine fills it as it starts the invocation, as it fills
-    /// [`Self::session_id`]; a document never writes it. A saved state holds no
-    /// person, so a machine running an invocation started for one is saved
-    /// once it ends ([`crate::saved_state::save`]), and a restart is made for
-    /// nobody.
-    pub principal: Option<Box<crate::event::Principal>>,
 }
 
 /// How a host ends a host-run invocation of some session of a tree
@@ -616,9 +606,16 @@ pub struct HostInvokeResponse {
     pub refusal: Option<String>,
 }
 
-/// A registered invoke-lifecycle handler.
-pub(crate) type HostInvokeHandler =
-    Box<dyn FnMut(HostInvokeEvent) -> Option<HostInvokeResponse> + Send + 'static>;
+/// A registered invoke-lifecycle handler: the event, and the person the
+/// macrostep that starts the invocation acts for (docs/adr/0116, D7), `None`
+/// for nobody and on a cancel. Lent for the call and not part of the request,
+/// so a request holds no person and a machine whose document reads none hands
+/// over a pointer that is never set.
+pub(crate) type HostInvokeHandler = Box<
+    dyn FnMut(HostInvokeEvent, Option<&crate::event::Principal>) -> Option<HostInvokeResponse>
+        + Send
+        + 'static,
+>;
 
 /// The set of processors a host has registered handlers for.
 ///
@@ -680,6 +677,11 @@ pub(crate) struct StartedInvoke {
     pub(crate) token: u64,
     /// The request the host was handed, as the engine recorded it.
     pub(crate) request: HostInvokeRequest,
+    /// Whether the macrostep that started it acts for a person (docs/adr/0116,
+    /// D7): a saved state holds no person, so a machine running one is saved
+    /// once it ends ([`crate::saved_state::save`]), and a restart is made for
+    /// nobody.
+    pub(crate) for_a_person: bool,
 }
 
 impl HostProcessorRegistry {
@@ -748,14 +750,15 @@ impl HostProcessorRegistry {
         &mut self,
         processor_type: &str,
         event: HostInvokeEvent,
+        acting: Option<&crate::event::Principal>,
     ) -> Option<Option<HostInvokeResponse>> {
         if is_reserved_type(processor_type) {
             let handler = self.invokers.get_mut(processor_type)?;
-            Some(handler(event))
+            Some(handler(event, acting))
         } else {
             let mut held = self.tree_invokers.held();
             let handler = held.get_mut(processor_type)?;
-            Some(handler(event))
+            Some(handler(event, acting))
         }
     }
 
@@ -775,9 +778,14 @@ impl HostProcessorRegistry {
     /// `<invoke>`; a restart keeps the number the saved state gave it, whose
     /// count the restore carried on, since it repeats that start rather than
     /// making another (docs/adr/0107, D4).
+    ///
+    /// `acting` is the person the macrostep that starts it acts for, lent to the
+    /// invoker for the call (docs/adr/0116, D7); the set records only that there
+    /// was one.
     pub(crate) fn start_invoke(
         &mut self,
         mut request: HostInvokeRequest,
+        acting: Option<&crate::event::Principal>,
     ) -> Option<(u64, Option<HostInvokeResponse>)> {
         if !self.invoker_is_registered(&request.processor_type) {
             return None;
@@ -807,10 +815,11 @@ impl HostProcessorRegistry {
             StartedInvoke {
                 token,
                 request: request.clone(),
+                for_a_person: acting.is_some(),
             },
         );
         let response = self
-            .call_invoker(&processor_type, HostInvokeEvent::Start(request))
+            .call_invoker(&processor_type, HostInvokeEvent::Start(request), acting)
             .flatten();
         Some((token, response))
     }
@@ -961,6 +970,7 @@ impl HostProcessorRegistry {
                 invoke_id: invoke_id.to_string(),
                 token,
             }),
+            None,
         )
         .is_some()
     }

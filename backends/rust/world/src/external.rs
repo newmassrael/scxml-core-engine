@@ -720,7 +720,11 @@ impl ExternalActor {
                     data,
                     ..EventMetadata::default()
                 };
-                self.deliver(&EngineEvent { name, metadata });
+                self.deliver(&EngineEvent {
+                    name,
+                    metadata,
+                    principal: None,
+                });
             }
             for call in calls {
                 match call {

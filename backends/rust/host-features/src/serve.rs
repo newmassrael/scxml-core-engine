@@ -27,7 +27,9 @@ pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
 ) {
     for operation in TYPES {
         let host = Arc::clone(host);
-        engine.register_invoker(operation, move |event| match event {
+        // docs/adr/0116, D7: the person the run that starts it acts for, lent for
+        // the call, which the audit log records its work as done for.
+        engine.register_invoker_for(operation, move |event, acting| match event {
             HostInvokeEvent::Start(request) => {
                 let params: Params = request
                     .params
@@ -41,12 +43,7 @@ pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
                 let outcome = host
                     .lock()
                     .expect("the host is not left mid-update")
-                    .start_for(
-                        operation,
-                        &invocation,
-                        &params,
-                        request.principal.as_deref(),
-                    );
+                    .start_for(operation, &invocation, &params, acting);
                 match outcome? {
                     Outcome::Done(data) => Some(HostInvokeResponse {
                         done_data: Some(data),

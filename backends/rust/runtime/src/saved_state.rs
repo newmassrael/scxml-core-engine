@@ -2639,11 +2639,20 @@ pub fn save<P: StatePolicy>(
     // event of a person still queued refuses the save: a host saves after the run
     // that takes it in, as the write that keeps a run is made after the run
     // (docs/adr/0113, D5).
-    if let Some(queued) = engine
-        .external_queue
-        .queued()
-        .find(|queued| queued.metadata.principal.is_some())
-    {
+    // A machine whose document reads no person holds a slot of no size on its
+    // queue, which is nobody's, and asks nothing here. Each event of a machine
+    // that reads one carries its slot, so the two lists are in step.
+    let unrun_for_a_person = (core::mem::size_of::<P::Principal>() != 0)
+        .then(|| {
+            engine
+                .external_queue
+                .queued()
+                .zip(engine.external_queue.persons())
+                .find(|(_, person)| crate::event::PrincipalSlot::person(*person).is_some())
+                .map(|(queued, _)| queued)
+        })
+        .flatten();
+    if let Some(queued) = unrun_for_a_person {
         return Err(StateRefusal::new(format!(
             "the event '{}' the machine has not run was said for a person, and a saved \
              state holds no person: save after the run that takes it in",
@@ -2659,7 +2668,7 @@ pub fn save<P: StatePolicy>(
     if let Some(running) = engine
         .running_host_invokes()
         .into_iter()
-        .find(|running| running.request.principal.is_some())
+        .find(|running| running.for_a_person)
     {
         return Err(StateRefusal::new(format!(
             "the host-run invocation '{}' of type '{}' was started for a person and runs on, \
@@ -3961,10 +3970,9 @@ fn rearm_host_invokes<P: StatePolicy>(
                 start: host.start,
                 restarted: true,
                 // The engine names the session as the invocation starts again.
-                session_id: String::new(),
                 // docs/adr/0116, D7: a saved state holds no person, and a save
                 // refuses while an invocation started for one runs.
-                principal: None,
+                session_id: String::new(),
             },
             deadline,
         );

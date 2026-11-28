@@ -51,8 +51,9 @@ use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     state_scratch, state_words, BoundedInbox, DocumentTables, Engine, EngineInbox, EngineState,
     EventId, EventQueue, EventQueueMut, EventQueueStorage, EventWithMetadata, HistoryId,
-    HostInvokeEnding, InboxInput, InboxRefusal, NoHistory, QueuedEvent, RunStore, StateId,
-    StateKind, StatePolicy, StateRow, StdHal, Target, TransitionId, TransitionRow, Workspace,
+    HostInvokeEnding, InboxInput, InboxRefusal, NoHistory, NoPrincipal, QueuedEvent, RunStore,
+    StateId, StateKind, StatePolicy, StateRow, StdHal, Target, TransitionId, TransitionRow,
+    Workspace,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -212,11 +213,11 @@ impl<const SESSION: u64> EventQueueStorage<Tag> for RecordingQueue<SESSION> {
         EventQueueStorage::queued(&self.inner)
     }
 
-    fn push_payload(&mut self, payload: Tag) {
+    fn push_carried(&mut self, payload: Tag, person: NoPrincipal) {
         RECORDING.with(|recording| {
             let mut recording = recording.borrow_mut();
             let Some(recording) = recording.as_mut() else {
-                EventQueueStorage::push_payload(&mut self.inner, payload);
+                EventQueueStorage::push_carried(&mut self.inner, payload, person);
                 return;
             };
             // Inside the raise of an own event, after the drain before it read
@@ -238,7 +239,7 @@ impl<const SESSION: u64> EventQueueStorage<Tag> for RecordingQueue<SESSION> {
                     None => recording.clock.tick(),
                 }
             };
-            EventQueueStorage::push_payload(&mut self.inner, payload);
+            EventQueueStorage::push_carried(&mut self.inner, payload, person);
             let returned = recording.clock.tick();
             recording.owner.push(OwnerOperation {
                 call: OwnerCall::Enqueue {
@@ -256,8 +257,15 @@ impl<const SESSION: u64> EventQueueStorage<Tag> for RecordingQueue<SESSION> {
         });
     }
 
-    fn pop_payload(&mut self) -> Option<Tag> {
-        EventQueueStorage::pop_payload(&mut self.inner)
+    fn pop_carried(&mut self) -> Option<(Tag, NoPrincipal)> {
+        EventQueueStorage::pop_carried(&mut self.inner)
+    }
+
+    fn persons<'a>(&'a self) -> impl Iterator<Item = &'a NoPrincipal>
+    where
+        NoPrincipal: 'a,
+    {
+        EventQueueStorage::persons(&self.inner)
     }
 }
 
@@ -305,6 +313,8 @@ impl<const SESSION: u64> StatePolicy for HistoryPolicy<SESSION> {
     type Hal = StdHal;
     type InternalQueue = EventQueue<Tag>;
     type ExternalQueue = RecordingQueue<SESSION>;
+    // It reads no person, and holds none (docs/adr/0116).
+    type Principal = NoPrincipal;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // No delayed send, no `<cancel>`, no `<donedata>`.
     type Scheduler = sce_rust_runtime::NoDelayedSends;

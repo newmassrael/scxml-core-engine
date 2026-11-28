@@ -3,8 +3,8 @@
 //
 // docs/adr/0116, D3, D4 and D6 under `datamodel="sce-static"`: a server with no script engine
 // reads the person an instance acts for, `_x.principal`, as the edge that took the event in
-// stamped it on the event's metadata, and never a quoted one, `_x.quoted`, while no deployment
-// lists a machine a quote is taken from.
+// told it beside the event, and never a quoted one, `_x.quoted`, while no deployment lists a
+// machine a quote is taken from; and a machine whose document reads no person holds none.
 //
 // The machine under `src/integration/host_processor/` is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_static_reads_a_principal.scxml` by the
@@ -12,8 +12,11 @@
 // `issuer`, `subject` and `proved_ms`, and its transitions count the events said for `alice`,
 // for another person and for nobody.
 
+use std::any::TypeId;
+
 use sce_rust_runtime::saved_state::{self, SavedShape};
-use sce_rust_runtime::{Engine, EventMetadata, EventType, Principal};
+use sce_rust_runtime::{Engine, EventMetadata, EventType, NoPrincipal, Principal, StatePolicy};
+use sce_rust_tests::integration::host_processor::StatechartStaticAnswersAnInstancePolicy as ReadsNone;
 use sce_rust_tests::integration::host_processor::StatechartStaticForwardsNoPrincipalPolicy as Forwarding;
 use sce_rust_tests::integration::host_processor::StatechartStaticReadsAPrincipalPolicy as Policy;
 
@@ -46,11 +49,10 @@ fn person(subject: &str) -> Principal {
     }
 }
 
-/// The metadata of an external event an instance sent, said for `person`.
-fn said_for(person: Option<Principal>) -> EventMetadata {
+/// The metadata of an external event an instance sent.
+fn sent() -> EventMetadata {
     EventMetadata {
         event_type: EventType::External,
-        principal: person.map(Box::new),
         ..EventMetadata::default()
     }
 }
@@ -63,17 +65,35 @@ fn engine() -> Engine<Policy> {
     e
 }
 
-/// Raise `event` said for `person` and run it.
+/// Raise `event` said for `person`, as an edge tells it, and run it.
 fn run(e: &mut Engine<Policy>, event: &str, person: Option<Principal>) {
-    e.raise_external_by_name_with_meta(event, &said_for(person));
+    e.raise_external_by_name_for(event, &sent(), person.map(Box::new));
     e.step();
+}
+
+/// docs/adr/0116: a machine pays for a person only where its document reads one. The policy of a
+/// document that declares no `sce:principal` names the slot of no size that needs no drop, so its
+/// runs, its external queue and its journal hold no field of a person, and no copy or drop of
+/// one is compiled into it; the machine whose document reads one holds the person boxed. Red if
+/// the generated policy names a person's slot for a document that reads none.
+#[test]
+fn a_machine_whose_document_reads_no_person_holds_none() {
+    type Slot = <ReadsNone as StatePolicy>::Principal;
+    assert_eq!(TypeId::of::<Slot>(), TypeId::of::<NoPrincipal>());
+    assert_eq!(std::mem::size_of::<Slot>(), 0);
+    assert!(!std::mem::needs_drop::<Slot>());
+    assert_eq!(
+        TypeId::of::<<Policy as StatePolicy>::Principal>(),
+        TypeId::of::<Option<Box<Principal>>>(),
+        "a document that reads a person holds it"
+    );
 }
 
 /// A guard reads the person an event was said for, a field of the record by name, and the
 /// person is absent on an event said for nobody and on an event the machine raises itself.
-/// `_x.quoted` is absent on every event. Red if `populate_event_metadata` does not take the
-/// person from the metadata, if the lowering reads another place, or if an internal event
-/// keeps the person of the event before it.
+/// `_x.quoted` is absent on every event. Red if `admit_principal` does not take the person the
+/// event was told with, if the lowering reads another place, or if an internal event keeps the
+/// person of the event before it.
 #[test]
 fn a_document_reads_the_person_its_event_was_said_for() {
     let mut e = engine();
@@ -141,7 +161,7 @@ fn a_child_is_told_a_forwarded_event_as_said_for_nobody() {
     let mut e = Engine::new(Forwarding::new());
     let Ok(()) = e.initialize();
     e.tick();
-    e.raise_external_by_name_with_meta("ping", &said_for(Some(person("alice"))));
+    e.raise_external_by_name_for("ping", &sent(), Some(Box::new(person("alice"))));
     // The parent runs `ping` and forwards it, the child runs it on the next tick, and its
     // answer is the parent's event after that.
     for _ in 0..4 {
@@ -165,7 +185,7 @@ fn a_child_is_told_a_forwarded_event_as_said_for_nobody() {
 #[test]
 fn a_machine_holding_an_unrun_event_of_a_person_does_not_save() {
     let mut e = engine();
-    e.raise_external_by_name_with_meta("ping", &said_for(Some(person("alice"))));
+    e.raise_external_by_name_for("ping", &sent(), Some(Box::new(person("alice"))));
     let refused = saved_state::save(&e, &SHAPE, Vec::new(), Vec::new(), Vec::new(), PROVED_MS)
         .expect_err("an unrun event of a person is not saved");
     assert!(

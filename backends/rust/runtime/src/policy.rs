@@ -230,7 +230,22 @@ pub trait StatePolicy: Sized + 'static {
     /// Inert under std, like [`InternalQueue`](StatePolicy::InternalQueue).
     /// The queues hold their events as numbers, so the engine drives every
     /// machine's queues with one copy of its code (docs/adr/0068).
-    type ExternalQueue: EventQueueStorage<Self::Payload>;
+    ///
+    /// Its events carry the person each was said for, of the policy's
+    /// [`Principal`](StatePolicy::Principal) type: an event an instance sent
+    /// waits here with it (docs/adr/0116, D3). The internal queue's events are
+    /// the machine's own and are said for nobody, so that queue holds none.
+    type ExternalQueue: EventQueueStorage<Self::Payload, Self::Principal>;
+
+    /// What an external event and the run it begins hold of the person they
+    /// are said for (docs/adr/0116, D3 and D7): `Option<Box<Principal>>` for a
+    /// machine whose document declares `sce:principal`, and
+    /// [`NoPrincipal`](crate::NoPrincipal), of no size, for every other, which
+    /// so carries no field of a person, copies none and frees none
+    /// ([`PrincipalSlot`](crate::PrincipalSlot)). Like the other per-machine
+    /// associated types it has no default and is emitted by every generated
+    /// policy.
+    type Principal: crate::event::PrincipalSlot;
 
     /// Storage for the delayed-send scheduler's per-entry cancel key
     /// (`send_id`), backing §scxml-6.3 `<cancel sendid>`.
@@ -1248,14 +1263,14 @@ pub trait StatePolicy: Sized + 'static {
     /// can pass them to `set_current_event_in_script_engine`.
     fn populate_event_metadata(&mut self, _metadata: &crate::event::EventMetadata) {}
 
-    /// docs/adr/0116, D3: take the person the event about to be processed was said for
-    /// (`EventMetadata::principal`) into the record the document reads a person as
-    /// (`_x.principal`), or hold none for an event said for nobody. `Err` when a text of the
-    /// person is longer than the record's field holds, naming it: the delivery is then refused
-    /// whole, as one whose data does not fit its type is (docs/adr/0124, D2), and is never run
-    /// as said for nobody (D6). A machine that reads no person takes nothing.
+    /// docs/adr/0116, D3: take `principal`, the person the event about to be processed was
+    /// said for, into the record the document reads a person as (`_x.principal`), or hold
+    /// none for an event said for nobody. `Err` when a text of the person is longer than the
+    /// record's field holds, naming it: the delivery is then refused whole, as one whose data
+    /// does not fit its type is (docs/adr/0124, D2), and is never run as said for nobody (D6).
+    /// A machine that reads no person holds no slot of any size and takes nothing.
     #[cfg(feature = "std")]
-    fn admit_principal(&mut self, _metadata: &crate::event::EventMetadata) -> Result<(), String> {
+    fn admit_principal(&mut self, _principal: &Self::Principal) -> Result<(), String> {
         Ok(())
     }
 

@@ -508,7 +508,6 @@ impl SessionMachine for Witness {
             if let EngineCall::Raise(event) = call {
                 stepped = true;
                 let person = event
-                    .metadata
                     .principal
                     .as_ref()
                     .map(|person| person.subject.clone());

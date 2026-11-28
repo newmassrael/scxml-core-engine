@@ -204,8 +204,13 @@ where
     }
 
     /// The facts the engine's macrosteps said since the last take (docs/adr/0114, D1), which the
-    /// pool appends with the state that said them.
+    /// pool appends with the state that said them, each with whom it was said for as the pool
+    /// records a person (docs/adr/0116, D7).
     fn take_journal(&mut self) -> Vec<sce_rust_runtime::journal::JournalEntry> {
-        self.engine.take_journal()
+        self.engine
+            .take_journal()
+            .into_iter()
+            .map(sce_rust_runtime::journal::JournalEntry::into_record)
+            .collect()
     }
 }

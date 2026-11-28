@@ -523,9 +523,10 @@ impl<T: Transport> ReferenceHost<T> {
     }
 
     /// [`Self::start`] for an invocation started in a run made for `acting`, the
-    /// person the request names (`HostInvokeRequest::principal`, docs/adr/0116,
-    /// D7), or for nobody: an operation that records who did what, the audit
-    /// log's append, records its work as done for them.
+    /// person the engine lends its invoker as it starts it
+    /// (`EngineState::register_invoker_for`, docs/adr/0116, D7), or for nobody:
+    /// an operation that records who did what, the audit log's append, records
+    /// its work as done for them.
     pub fn start_for(
         &mut self,
         operation: &str,

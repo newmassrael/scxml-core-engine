@@ -20,9 +20,18 @@
 //! state that made it does. Until then it has no position. Nothing here is part of a
 //! saved state: the state is the checkpoint, and a restore replays nothing.
 
+use crate::event::{Principal, PrincipalSlot};
+
 /// One entry a macrostep made, as the write that keeps its checkpoint appends it.
+///
+/// `A` is how the entry holds whom it was said for: as the engine keeps it, the
+/// type a machine's policy holds a person in (`StatePolicy::Principal`, so a
+/// machine whose document reads no person keeps no field of one); as a
+/// document's send makes it, nobody ([`NoPrincipal`](crate::NoPrincipal)); and
+/// as a host's record holds it, the default, an optional person
+/// ([`Self::into_record`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JournalEntry {
+pub struct JournalEntry<A = Option<Box<Principal>>> {
     /// The id of the schema its data is a record of: the name of the event the
     /// schema declares, which a follower is delivered the entry as (docs/adr/0114,
     /// D4).
@@ -40,9 +49,51 @@ pub struct JournalEntry {
     /// that said it acts for, with the instance that acts for them, which the
     /// engine writes as it keeps the entry
     /// ([`EngineState::record_journal_entry`](crate::EngineState::record_journal_entry));
-    /// `None` for a macrostep made for nobody. Boxed as
-    /// `EventMetadata::principal` is, from which it is copied.
-    pub principal: Option<Box<crate::event::Principal>>,
+    /// nobody for a macrostep made for nobody, and for every entry of a machine
+    /// whose document reads no person.
+    pub principal: A,
+}
+
+impl<A> JournalEntry<A> {
+    /// This entry, said for `principal`: what the engine keeps of an entry a
+    /// document's send made, said for the person its macrostep acts for.
+    pub fn said_for<B>(self, principal: B) -> JournalEntry<B> {
+        let JournalEntry {
+            schema,
+            revision,
+            data,
+            valid_ms,
+            principal: _,
+        } = self;
+        JournalEntry {
+            schema,
+            revision,
+            data,
+            valid_ms,
+            principal,
+        }
+    }
+}
+
+impl<A: PrincipalSlot> JournalEntry<A> {
+    /// The record a host keeps of this entry: whom it was said for as a host's
+    /// record holds a person, `None` for nobody.
+    pub fn into_record(self) -> JournalEntry {
+        let JournalEntry {
+            schema,
+            revision,
+            data,
+            valid_ms,
+            principal,
+        } = self;
+        JournalEntry {
+            schema,
+            revision,
+            data,
+            valid_ms,
+            principal: principal.into_record(),
+        }
+    }
 }
 
 /// The entry of a fact said of the schema `schema` at `revision`, whose record is
@@ -64,7 +115,7 @@ pub fn entry(
     record_json: &str,
     description: &str,
     valid_time: Option<&str>,
-) -> Result<JournalEntry, crate::record_cbor::RecordCborRefusal> {
+) -> Result<JournalEntry<crate::event::NoPrincipal>, crate::record_cbor::RecordCborRefusal> {
     let data = crate::record_cbor::encode(record_json, description)?;
     let valid_ms = valid_time
         .map(|field| valid_ms_of(record_json, field))
@@ -75,7 +126,7 @@ pub fn entry(
         data,
         valid_ms,
         // The engine writes who it was said for as it keeps the entry.
-        principal: None,
+        principal: crate::event::NoPrincipal,
     })
 }
 

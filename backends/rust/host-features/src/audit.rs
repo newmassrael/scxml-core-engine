@@ -23,8 +23,9 @@
 //!
 //! Who an append was made for is written by the host, never by the document
 //! (docs/adr/0116, D7): an append started in a run under a delegation, whose
-//! request names the person ([`sce_rust_runtime::HostInvokeRequest::principal`]),
-//! is written with the member [`PRINCIPAL_MEMBER`], the instance and the person
+//! invoker is lent the person
+//! ([`sce_rust_runtime::EngineState::register_invoker_for`]), is written with
+//! the member [`PRINCIPAL_MEMBER`], the instance and the person
 //! ([`principal_member`]), the subject written as a personal value is. An entry
 //! that names that member itself is refused, so a document neither writes it
 //! nor leaves it out.

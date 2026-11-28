@@ -6534,11 +6534,11 @@ impl StaticTarget for RustTarget {
     fn event_origin(&self) -> Option<&'static str> {
         Some("self.pending_event_origin.as_ref().map_or(\"\", |origin| origin.address.as_str())")
     }
-    // The person the delivering edge stamped on the event (`EventMetadata::principal`),
-    // which the machine holds while it processes the event, and the person a machine
-    // quoted, which no edge takes while no deployment lists a quote (docs/adr/0116, D4):
-    // `populate_event_metadata` fills both, and every event that carries no person leaves
-    // them absent.
+    // The person the delivering edge told the event with (`StatePolicy::Principal`, beside
+    // the event and no field of `_event`), which the machine holds while it processes it, and
+    // the person a machine quoted, which no edge takes while no deployment lists a quote
+    // (docs/adr/0116, D4): `admit_principal` fills both, and every event that carries no
+    // person leaves them absent.
     fn event_principal(&self) -> Option<(&'static str, &'static str)> {
         Some(("self.pending_event_principal", "self.pending_event_quoted"))
     }

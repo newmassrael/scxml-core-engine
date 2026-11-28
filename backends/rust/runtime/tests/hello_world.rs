@@ -61,6 +61,8 @@ impl StatePolicy for HwPolicy {
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    // It reads no person, and holds none (docs/adr/0116).
+    type Principal = sce_rust_runtime::NoPrincipal;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // What the generator gives this document: it has no delayed send, no
     // `<cancel>` and no `<donedata>`, so its machine keeps neither a

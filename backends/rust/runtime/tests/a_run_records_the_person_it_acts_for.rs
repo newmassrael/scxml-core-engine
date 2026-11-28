@@ -4,9 +4,11 @@
 // docs/adr/0116, D7: who did it is recorded by the platform. A fact a macrostep says into the
 // event journal and a host-run invocation it starts are recorded as done for the person the
 // external event that began the macrostep was said for, the internal events it raises included,
-// and for nobody in a macrostep begun by an event said for nobody; never as a document wrote it.
-// A saved state holds no person, so a machine running an invocation started for one refuses the
-// save. The machine is written by hand, so that what these cases read is the runtime.
+// and for nobody in a macrostep begun by an event said for nobody; a document cannot write one,
+// since the entry and the request it makes hold no person. A saved state holds no person, so a
+// machine running an invocation started for one refuses the save. The machine is written by
+// hand, as one whose document reads a person is generated, so that what these cases read is the
+// runtime.
 //
 // The machine: one state, `s`, whose targetless transitions take `say` (a fact, and the internal
 // event `said`), `said` (a fact) and `ask` (a host-run invocation).
@@ -22,8 +24,8 @@ use sce_rust_runtime::saved_state::{self, SavedShape};
 use sce_rust_runtime::{
     state_scratch, state_words, DocumentTables, Engine, EngineState, EventId, EventMetadata,
     EventType, EventWithMetadata, HistoryId, HostInvokeEvent, HostInvokeRequest, NoHistory,
-    Principal, RunStore, StateId, StateKind, StatePolicy, StateRow, Target, TransitionId,
-    TransitionRow, Workspace,
+    NoPrincipal, Principal, RunStore, StateId, StateKind, StatePolicy, StateRow, Target,
+    TransitionId, TransitionRow, Workspace, MAX_EVENT_QUEUE_DEPTH,
 };
 
 /// The type the machine's invocation names, which the host serves.
@@ -52,12 +54,6 @@ const S_SAID: TransitionId = TransitionId(1);
 /// `s` on `ask`, targetless.
 const S_ASK: TransitionId = TransitionId(2);
 
-/// The person a document would write if it could: what every fact and every request the machine
-/// makes names, and what the engine must write over.
-fn forged() -> Box<Principal> {
-    Box::new(person("mallory", "m9"))
-}
-
 /// `subject` of the issuer these cases name, as the instance `instance` acts for them.
 fn person(subject: &str, instance: &str) -> Principal {
     Principal {
@@ -81,7 +77,11 @@ impl StatePolicy for Teller {
     type EventData<'e> = ();
     type Hal = sce_rust_runtime::StdHal;
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
-    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    // docs/adr/0116, D3: its external events carry the person each was said for.
+    type ExternalQueue =
+        sce_rust_runtime::EventQueue<Self::Payload, { MAX_EVENT_QUEUE_DEPTH }, Self::Principal>;
+    // As a machine whose document declares `sce:principal` holds a person.
+    type Principal = Option<Box<Principal>>;
     type ScheduledSendId = sce_rust_runtime::SceString;
     // No delayed send, no `<cancel>`, no `<donedata>`, and no deadline.
     type Scheduler = sce_rust_runtime::NoDelayedSends;
@@ -216,7 +216,7 @@ impl StatePolicy for Teller {
     }
 
     // The content a generated `<send type="sce:journal">` and a generated invoke site make,
-    // each naming a person the engine must write over.
+    // neither of which holds a person: the engine names the one the macrostep acts for.
     fn execute_transition_content(
         &mut self,
         transition: TransitionId,
@@ -228,7 +228,7 @@ impl StatePolicy for Teller {
             revision: 1,
             data: Vec::new(),
             valid_ms: None,
-            principal: Some(forged()),
+            principal: NoPrincipal,
         };
         if transition == S_SAY {
             engine.record_journal_entry(said("say"));
@@ -242,7 +242,6 @@ impl StatePolicy for Teller {
                 HostInvokeRequest {
                     processor_type: TYPE.to_string(),
                     invoke_id: JOB.to_string(),
-                    principal: Some(forged()),
                     ..HostInvokeRequest::default()
                 },
             );
@@ -251,11 +250,10 @@ impl StatePolicy for Teller {
     }
 }
 
-/// The metadata of an external event an instance sent, said for `person`.
-fn said_for(person: Option<Principal>) -> EventMetadata {
+/// The metadata of an external event an instance sent.
+fn sent() -> EventMetadata {
     EventMetadata {
         event_type: EventType::External,
-        principal: person.map(Box::new),
         ..EventMetadata::default()
     }
 }
@@ -269,11 +267,11 @@ fn started() -> (Engine<Teller>, Starts) {
     let mut engine = Engine::new(Teller);
     let starts = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&starts);
-    engine.register_invoker(TYPE, move |event| {
-        if let HostInvokeEvent::Start(request) = event {
+    engine.register_invoker_for(TYPE, move |event, acting| {
+        if let HostInvokeEvent::Start(_) = event {
             seen.lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .push(request.principal.map(|person| *person));
+                .push(acting.cloned());
         }
         None
     });
@@ -282,9 +280,9 @@ fn started() -> (Engine<Teller>, Starts) {
     (engine, starts)
 }
 
-/// Raise `event` said for `person` and run it.
+/// Raise `event` said for `person`, as an edge tells it, and run it.
 fn run(engine: &mut Engine<Teller>, event: &str, person: Option<Principal>) {
-    engine.raise_external_by_name_with_meta(event, &said_for(person));
+    engine.raise_external_by_name_for(event, &sent(), person.map(Box::new));
     engine.step();
 }
 
@@ -303,11 +301,11 @@ fn said(engine: &mut Engine<Teller>) -> Vec<(&'static str, Option<String>)> {
 }
 
 /// A fact said in a macrostep begun by an event said for a person is recorded as said for that
-/// person, the one said on the internal event the macrostep raised among them, whatever the
-/// document wrote; one begun by an event said for nobody records nobody, though a person acted
-/// before it. Red if `record_journal_entry` keeps what the document wrote, if the person is read
-/// from the event being processed (the internal `said` carries none), or if the person of an
-/// earlier macrostep is kept past an external event said for nobody.
+/// person, the one said on the internal event the macrostep raised among them; one begun by an
+/// event said for nobody records nobody, though a person acted before it. Red if
+/// `record_journal_entry` records nobody, if the person is read from the event being processed
+/// (the internal `said` carries none), or if the person of an earlier macrostep is kept past an
+/// external event said for nobody.
 #[test]
 fn a_fact_is_recorded_as_said_for_the_person_the_macrostep_acts_for() {
     let (mut engine, _) = started();
@@ -333,11 +331,11 @@ fn a_fact_is_recorded_as_said_for_the_person_the_macrostep_acts_for() {
     );
 }
 
-/// A host-run invocation started in a macrostep is handed the person the macrostep acts for,
-/// whatever the document wrote, and none when it acts for nobody; and while one started for a
-/// person runs, the machine refuses to be saved, since a restore would start it again for nobody.
-/// Red if `start_host_invoke` leaves the request's person as the document wrote it, or if the
-/// save holds a machine whose running invocation was started for a person.
+/// A host-run invocation started in a macrostep is handed the person the macrostep acts for, and
+/// none when it acts for nobody; and while one started for a person runs, the machine refuses to
+/// be saved, since a restore would start it again for nobody. Red if `start_host_invoke` lends
+/// its invoker no person, or if the save holds a machine whose running invocation was started for
+/// a person.
 #[test]
 fn an_invocation_is_started_for_the_person_and_holds_the_save_while_it_runs() {
     let shape = SavedShape {

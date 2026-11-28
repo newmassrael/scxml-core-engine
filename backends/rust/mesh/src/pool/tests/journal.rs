@@ -44,7 +44,7 @@ impl SessionMachine for Teller {
                         revision: 1,
                         data,
                         valid_ms: None,
-                        principal: event.metadata.principal.clone(),
+                        principal: event.principal.clone(),
                     });
                 }
                 "close" => self.closed = true,

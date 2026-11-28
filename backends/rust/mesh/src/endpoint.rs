@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{
     Engine, EventMetadata, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
-    MeshCall, Principal, StatePolicy,
+    MeshCall, Principal, PrincipalSlot, StatePolicy,
 };
 
 use crate::causal::{CausalLayer, Dot, Refusal, Start};
@@ -91,6 +91,12 @@ pub trait Environment: Send {
 pub struct EngineEvent {
     pub name: String,
     pub metadata: EventMetadata,
+    /// The person the instance that sent it acted for when its edge took it in
+    /// (docs/adr/0116, D3; [`Endpoint::receive_member_for`]), `None` for every
+    /// other event. No field of `_event`: [`apply_to`] tells it to a machine
+    /// whose document reads a person, beside the event, and a machine whose
+    /// document reads none holds none.
+    pub principal: Option<Box<Principal>>,
 }
 
 /// One thing the host must tell its engine, in the order the endpoint came
@@ -118,7 +124,12 @@ pub enum EngineCall {
 impl From<EngineCall> for MeshCall {
     fn from(call: EngineCall) -> Self {
         match call {
-            EngineCall::Raise(EngineEvent { name, metadata }) => MeshCall::Raise { name, metadata },
+            // No `MeshCall` holds a person: a machine is told one through
+            // [`apply_to`], and a child session, whose events come from no edge
+            // of an instance, is told none (docs/adr/0116, D3).
+            EngineCall::Raise(EngineEvent { name, metadata, .. }) => {
+                MeshCall::Raise { name, metadata }
+            }
             EngineCall::EndInvoke {
                 invoke_id,
                 token,
@@ -151,8 +162,8 @@ pub(crate) enum Told {
         invoke_id: String,
         /// The person the instance `source` acted for when its edge took the event in
         /// (`_x.principal`, docs/adr/0116, D3; [`Endpoint::receive_member_for`]), `None` for
-        /// every other event. A checkpoint holds none ([`Endpoint::seal`]). Boxed as
-        /// [`EventMetadata::principal`] is, into which it moves.
+        /// every other event. A checkpoint holds none ([`Endpoint::seal`]). Boxed: few
+        /// events carry one, and an event said for nobody costs a pointer.
         principal: Option<Box<Principal>>,
     },
     /// The end of the start `token` of the Mesh request `invoke_id`.
@@ -181,9 +192,9 @@ impl Told {
                     // §mesh-10.7: an inbound request's invokeid, which a
                     // reply sent while it is handled carries back.
                     invoke_id,
-                    principal,
                     ..mesh_metadata(data, &source, send_id)
                 },
+                principal,
             }),
             Told::End {
                 invoke_id,
@@ -1103,9 +1114,25 @@ impl<T, E> Endpoint<T, E> {
 /// `sce:mesh-rpc` (§mesh-9.5); a deadline the requester reached itself has
 /// no peer to name, and carries neither. Applied by the engine's own
 /// [`Engine::apply_mesh_call`], the body a child session's calls go through.
+///
+/// An event an instance sent is told beside the person its edge stamped on it
+/// (docs/adr/0116, D3), in the slot the machine's policy holds a person in: the
+/// person for a machine whose document reads `_x.principal`, and nothing for one
+/// whose document reads none ([`PrincipalSlot::told`]).
 pub fn apply_to<P: StatePolicy>(engine: &mut Engine<P>, calls: Vec<EngineCall>) {
     for call in calls {
-        engine.apply_mesh_call(call.into());
+        match call {
+            EngineCall::Raise(EngineEvent {
+                name,
+                metadata,
+                principal,
+            }) => engine.raise_external_by_name_for(
+                &name,
+                &metadata,
+                <P::Principal as PrincipalSlot>::told(principal),
+            ),
+            call => engine.apply_mesh_call(call.into()),
+        }
     }
 }
 
@@ -2025,7 +2052,7 @@ mod tests {
         let events = raised(&mut cloud);
         let people: Vec<(&str, Option<&Principal>)> = events
             .iter()
-            .map(|event| (event.name.as_str(), event.metadata.principal.as_deref()))
+            .map(|event| (event.name.as_str(), event.principal.as_deref()))
             .collect();
         assert_eq!(
             people,

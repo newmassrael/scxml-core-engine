@@ -102,6 +102,8 @@ impl Followed {
                 origin: Some(EventOrigin::new(JOURNAL_ORIGIN_TYPE, self.origin.clone())),
                 ..EventMetadata::default()
             },
+            // docs/adr/0116, D3: an entry of a journal is said for nobody.
+            principal: None,
         })
     }
 }

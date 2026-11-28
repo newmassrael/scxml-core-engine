@@ -80,7 +80,7 @@ use std::time::Instant;
 
 use crate::clock::SceClock;
 use crate::donedata_storage::DoneDataStorage;
-use crate::event::{EventMetadata, EventType, EventWithMetadata};
+use crate::event::{EventMetadata, EventType, EventWithMetadata, PrincipalSlot};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::{EventQueueMut, EventQueueStorage, QueuedEvent};
@@ -1056,6 +1056,9 @@ pub(crate) struct RestoredHostInvoke {
 pub(crate) struct RunningHostInvoke {
     /// The request the host was handed.
     pub(crate) request: crate::host_processor::HostInvokeRequest,
+    /// Whether it was started in a macrostep made for a person (docs/adr/0116,
+    /// D7), which a saved state, holding no person, cannot start again for.
+    pub(crate) for_a_person: bool,
     /// When its deadline comes due, `None` for an invocation without one.
     /// Already past for one that came due while a restored machine waited to
     /// start it.
@@ -1193,16 +1196,18 @@ pub struct EngineState<P: StatePolicy> {
     /// the checkpoint that holds the state that made it appends it
     /// ([`EngineState::take_journal`]). Not part of a saved state.
     #[cfg(feature = "std")]
-    pub(crate) journal: Vec<crate::journal::JournalEntry>,
+    pub(crate) journal: Vec<crate::journal::JournalEntry<P::Principal>>,
     /// The person the macrostep now running acts for (docs/adr/0116, D7): the one the external
-    /// event that began it was said for (`EventMetadata::principal`), `None` for one said for
-    /// nobody (a timer, a completion, an entry of a followed journal) and before the first. A fact
-    /// the macrostep says ([`EngineState::record_journal_entry`]) and a host-run invocation it
-    /// starts (`HostInvokeRequest::principal`) are recorded as done for it: the internal events
+    /// event that began it was said for, nobody for one said for nobody (a timer, a completion,
+    /// an entry of a followed journal) and before the first. A fact the macrostep says
+    /// ([`EngineState::record_journal_entry`]) and a host-run invocation it starts
+    /// ([`EngineState::register_invoker_for`]) are recorded as done for it: the internal events
     /// the macrostep raises carry no person (`_x.principal` is absent on them), and their work is
-    /// still the run's. Not part of a saved state: the next external event sets it again.
+    /// still the run's. Not part of a saved state: the next external event sets it again. Of the
+    /// policy's [`StatePolicy::Principal`] type, so a machine whose document reads no person
+    /// holds a field of no size here.
     #[cfg(feature = "std")]
-    pub(crate) acting: Option<Box<crate::event::Principal>>,
+    pub(crate) acting: P::Principal,
     /// The factory of the routers of this machine's children (SCE_MESH.md,
     /// Child Sessions in Mesh): registered by the host on a machine it starts
     /// ([`Engine::register_child_mesh_routers`]), and on a child by the
@@ -1321,7 +1326,8 @@ macro_rules! engine_initial_fields {
             policy: $policy;
             run_store: <P::RunStore as RunStorage>::EMPTY,
             internal_queue: <P::InternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
-            external_queue: <P::ExternalQueue as EventQueueStorage<P::Payload>>::EMPTY,
+            external_queue:
+                <P::ExternalQueue as EventQueueStorage<P::Payload, P::Principal>>::EMPTY,
             core: EngineCore::new(P::TABLES.default_state),
             #[cfg(feature = "std")]
             late_bound_states: std::collections::HashSet::new(),
@@ -1336,7 +1342,7 @@ macro_rules! engine_initial_fields {
             #[cfg(feature = "std")]
             journal: Vec::new(),
             #[cfg(feature = "std")]
-            acting: None,
+            acting: <P::Principal as PrincipalSlot>::NOBODY,
             #[cfg(feature = "std")]
             child_mesh_routers: None,
             #[cfg(feature = "std")]
@@ -2370,6 +2376,7 @@ impl<P: StatePolicy> Engine<P> {
         EngineState::<P>::enqueue(
             &mut self.state.external_queue,
             EngineState::<P>::external_arrived_as(event, wire, ""),
+            <P::Principal as PrincipalSlot>::NOBODY,
         );
         let opened = self.begin_turn();
         self.step_in_turn(Some(Lend {
@@ -3179,16 +3186,26 @@ impl<P: StatePolicy> Engine<P> {
         lent: Option<P::EventData<'_>>,
     ) -> (Bound, P::Payload) {
         // The two queues are of two types (docs/adr/0076), so each is asked
-        // for its own payload rather than one chosen by reference.
-        let mut payload = if core::mem::size_of::<P::Payload>() != 0 {
-            if external {
-                self.state.external_queue.pop_payload()
+        // for what its own events carry rather than one chosen by reference.
+        // Only an external event is said for anyone (docs/adr/0116, D3): an
+        // internal one is the machine's own, and its queue holds no person.
+        let (mut payload, person) = if external {
+            if core::mem::size_of::<(P::Payload, P::Principal)>() != 0 {
+                self.state.external_queue.pop_carried().unwrap_or_default()
             } else {
-                self.state.internal_queue.pop_payload()
+                Default::default()
             }
-            .unwrap_or_default()
         } else {
-            P::Payload::default()
+            let payload = if core::mem::size_of::<P::Payload>() != 0 {
+                self.state
+                    .internal_queue
+                    .pop_carried()
+                    .map(|(payload, _)| payload)
+                    .unwrap_or_default()
+            } else {
+                P::Payload::default()
+            };
+            (payload, <P::Principal as PrincipalSlot>::NOBODY)
         };
         // The event is a number from here on, and becomes this machine's own
         // value only where a step below reads it as one: the door, `<finalize>`
@@ -3200,11 +3217,11 @@ impl<P: StatePolicy> Engine<P> {
         // was said for, or for nobody; the internal events it raises inherit the run, not a
         // person of their own.
         #[cfg(feature = "std")]
-        {
-            if external {
-                self.state.acting = metadata.principal.clone();
-            }
+        if external {
+            self.state.acting = person;
         }
+        #[cfg(not(feature = "std"))]
+        let _ = person;
         // EventSchema native lowering: when no typed payload rode with this
         // event, read it out of the `data` every other producer fills, at the
         // door. Data a host lent is held there to the same contract, and
@@ -3228,7 +3245,13 @@ impl<P: StatePolicy> Engine<P> {
             // into the record the document reads a person as, and a person a field
             // of it does not hold refuses the delivery by the one verdict a payload
             // that does not fit its type takes: never run as said for nobody.
-            if let Err(refusal) = self.policy.admit_principal(&metadata) {
+            let nobody = <P::Principal as PrincipalSlot>::NOBODY;
+            let principal = if external {
+                &self.state.acting
+            } else {
+                &nobody
+            };
+            if let Err(refusal) = self.policy.admit_principal(principal) {
                 let refusal = format!(
                     "`{}`, said for a person: {refusal}",
                     P::get_event_name(P::event_of(delivered))
@@ -3300,25 +3323,12 @@ impl<P: StatePolicy> Engine<P> {
                 #[cfg(not(feature = "std"))]
                 let name = P::get_event_name(P::event_of(delivered));
                 // docs/adr/0116, D4: nothing passes on by itself. The copy is the
-                // event's, and the person it was said for (`_x.principal`, no
-                // field of `_event`) stays with this machine: a child is told
-                // the event as said for nobody.
-                #[cfg(feature = "std")]
-                let stripped;
-                #[cfg(feature = "std")]
-                let forwarded = if metadata.principal.is_some() {
-                    stripped = EventMetadata {
-                        principal: None,
-                        ..metadata.clone()
-                    };
-                    &stripped
-                } else {
-                    &metadata
-                };
-                #[cfg(not(feature = "std"))]
-                let forwarded = &metadata;
+                // event's `_event`, and the person it was said for (`_x.principal`)
+                // is no field of it: the person rides beside the event and stays
+                // with this machine, so a child is told the event as said for
+                // nobody.
                 self.with_policy(|policy, engine| {
-                    policy.forward_to_autoforward_children(name, forwarded, engine)
+                    policy.forward_to_autoforward_children(name, &metadata, engine)
                 });
             }
         }
@@ -3559,9 +3569,20 @@ impl<P: StatePolicy> EngineState<P> {
     /// The internal queue does not drain ([`raise`](Self::raise)): it is the
     /// running macrostep's own, and arrival order is the external queue's.
     fn enqueue_external(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
+        self.enqueue_external_for(event, <P::Principal as PrincipalSlot>::NOBODY);
+    }
+
+    /// [`enqueue_external`](Self::enqueue_external), for an event said for
+    /// `person` (docs/adr/0116, D3): the person rides beside it on the queue, as
+    /// a typed payload does, and is the run's when the event is taken.
+    fn enqueue_external_for(
+        &mut self,
+        event: EventWithMetadata<P::Event, P::Payload>,
+        person: P::Principal,
+    ) {
         #[cfg(any(feature = "std", feature = "bounded-inbox"))]
         self.drain_before_own();
-        Self::enqueue(&mut self.external_queue, event);
+        Self::enqueue(&mut self.external_queue, event, person);
     }
 
     /// Apply one posted `input` by the call a direct caller on the owner
@@ -3577,7 +3598,11 @@ impl<P: StatePolicy> EngineState<P> {
             // (raise -> drain -> apply -> raise) that the bare-metal stack bound
             // (`nostd-footprint`) cannot be computed over, though the
             // drain's core would queue it in place after one level.
-            InboxInput::ExternalEvent(event) => Self::enqueue(&mut self.external_queue, event),
+            InboxInput::ExternalEvent(event) => Self::enqueue(
+                &mut self.external_queue,
+                event,
+                <P::Principal as PrincipalSlot>::NOBODY,
+            ),
             #[cfg(feature = "std")]
             InboxInput::ExternalEventByName { name, metadata } => {
                 self.raise_external_by_name_with_meta(&name, &metadata);
@@ -3624,7 +3649,10 @@ impl<P: StatePolicy> EngineState<P> {
             // is: the drain applying it is the one that would run.
             HeldInput::ExternalEvent { queued, payload } => {
                 Self::enqueue_queued(&mut self.external_queue, queued, || {
-                    crate::inbox::payload_of(payload)
+                    (
+                        crate::inbox::payload_of(payload),
+                        <P::Principal as PrincipalSlot>::NOBODY,
+                    )
                 });
             }
             HeldInput::ExternalEventByName { name, metadata } => {
@@ -4205,13 +4233,20 @@ impl<P: StatePolicy> EngineState<P> {
     /// of this macrostep made, after the ones made before it (docs/adr/0114,
     /// D1). The send raises the fact's event itself; this keeps only the entry,
     /// which has no position until the host's write appends it. The entry is
-    /// recorded as said for the person the macrostep acts for, whatever the
-    /// document wrote (docs/adr/0116, D7: who did it is recorded by the
-    /// platform, and a document neither writes it nor leaves it out).
+    /// recorded as said for the person the macrostep acts for (docs/adr/0116,
+    /// D7: who did it is recorded by the platform, and a document neither
+    /// writes it nor leaves it out).
+    ///
+    /// The entry comes with no person ([`crate::NoPrincipal`]), so no document can write one,
+    /// and is kept with the policy's [`StatePolicy::Principal`]: a machine whose document
+    /// reads no person keeps no field of one.
     #[cfg(feature = "std")]
-    pub fn record_journal_entry(&mut self, mut entry: crate::journal::JournalEntry) {
-        entry.principal = self.acting.clone();
-        self.journal.push(entry);
+    pub fn record_journal_entry(
+        &mut self,
+        entry: crate::journal::JournalEntry<crate::event::NoPrincipal>,
+    ) {
+        let said = entry.said_for(self.acting.clone());
+        self.journal.push(said);
     }
 
     /// The entries of the event journal the machine's macrosteps made since the
@@ -4219,8 +4254,10 @@ impl<P: StatePolicy> EngineState<P> {
     /// host's write of the checkpoint that holds the machine's state now
     /// appends to the session's stream, so an entry exists exactly when the
     /// state that made it does. Empty for a machine that says no fact.
+    /// Each names whom it was said for in the policy's [`StatePolicy::Principal`] type; a host
+    /// that keeps it takes the record of it ([`crate::journal::JournalEntry::into_record`]).
     #[cfg(feature = "std")]
-    pub fn take_journal(&mut self) -> Vec<crate::journal::JournalEntry> {
+    pub fn take_journal(&mut self) -> Vec<crate::journal::JournalEntry<P::Principal>> {
         core::mem::take(&mut self.journal)
     }
 
@@ -4275,7 +4312,7 @@ impl<P: StatePolicy> EngineState<P> {
         // No drain of the inbox here, unlike `enqueue_external` (docs/adr/0084,
         // D2): the internal queue is the running macrostep's own, and arrival
         // order is a property of the external queue.
-        Self::enqueue(&mut self.internal_queue, event);
+        Self::enqueue(&mut self.internal_queue, event, crate::event::NoPrincipal);
     }
 
     /// §scxml-C-1 / 6.2: Raise an external event a host posts, with optional
@@ -4526,6 +4563,30 @@ impl<P: StatePolicy> EngineState<P> {
     /// with it — §6.4 mandates an exact copy. Unknown names degrade silently:
     /// a child is not required to declare every event its parent forwards.
     pub fn raise_external_by_name_with_meta(&mut self, event_name: &str, metadata: &EventMetadata) {
+        // §scxml-5.10: the copy is exact, but what this machine is told the event
+        // is called is a fact about THIS machine's names, which the door below
+        // gives it; an event that crosses by name is said for nobody here.
+        self.raise_external_by_name_for(
+            event_name,
+            metadata,
+            <P::Principal as PrincipalSlot>::NOBODY,
+        );
+    }
+
+    /// [`raise_external_by_name_with_meta`](Self::raise_external_by_name_with_meta), for an
+    /// event said for `person` (docs/adr/0116, D3): the door an edge that took an event in
+    /// tells its machine whom an instance acted for, the person of the delegation its server
+    /// holds and no field of an envelope (invariant 12 of SCE_MESH.md section 10.9). The person
+    /// is no field of `_event`: it rides beside the event on the external queue and is the
+    /// run's when the event is taken, and a document that declares `sce:principal` reads it as
+    /// `_x.principal`. A machine whose document reads no person is handed its slot of no size
+    /// (`PrincipalSlot::told` gives it).
+    pub fn raise_external_by_name_for(
+        &mut self,
+        event_name: &str,
+        metadata: &EventMetadata,
+        person: P::Principal,
+    ) {
         let Some(event) = P::resolve_event_by_name(event_name) else {
             sce_log_debug!(
                 "Engine::raise_external_by_name_with_meta: event '{}' matches no event of the document, ignoring",
@@ -4533,9 +4594,9 @@ impl<P: StatePolicy> EngineState<P> {
             );
             return;
         };
-        // §scxml-5.10: the copy is exact, but what this machine is told the event
-        // is called is a fact about THIS machine's names — the source's arrival
-        // name was matched against the source's, and says nothing here.
+        // The copy is exact, but what this machine is told the event is called is
+        // a fact about THIS machine's names — the source's arrival name was
+        // matched against the source's, and says nothing here.
         #[cfg(feature = "std")]
         let metadata = EventMetadata {
             name: crate::sce_string_from_str(Self::arrival_name_of(event, event_name)),
@@ -4545,13 +4606,17 @@ impl<P: StatePolicy> EngineState<P> {
         let metadata = metadata.clone();
         // `target` stays default: the copy is delivered to this machine, never
         // re-routed to the original event's target.
-        self.raise_external_with_meta(EventWithMetadata {
-            event,
-            payload: P::Payload::default(),
-            metadata,
-            #[cfg(feature = "std")]
-            target: SceString::new(),
-        });
+        sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
+        self.enqueue_external_for(
+            EventWithMetadata {
+                event,
+                payload: P::Payload::default(),
+                metadata,
+                #[cfg(feature = "std")]
+                target: SceString::new(),
+            },
+            person,
+        );
     }
 
     /// §scxml-6.4.1: Raise an external event with full metadata (for child-to-parent).
@@ -5264,7 +5329,7 @@ impl<P: StatePolicy> EngineState<P> {
     /// router answers with [`EngineState::complete_host_invoke_from`] or
     /// [`EngineState::fail_host_invoke`], naming the peer that answered.
     #[cfg(feature = "std")]
-    pub fn register_mesh_rpc_invoker<F>(&mut self, router: F)
+    pub fn register_mesh_rpc_invoker<F>(&mut self, mut router: F)
     where
         F: FnMut(
                 crate::host_processor::HostInvokeEvent,
@@ -5272,9 +5337,11 @@ impl<P: StatePolicy> EngineState<P> {
             + Send
             + 'static,
     {
+        // docs/adr/0116, D4: nothing passes on by itself, so the router a
+        // request crosses to a peer by is handed no person.
         self.host_processors.register_invoker(
             crate::host_processor::MESH_RPC_INVOKE_TYPE,
-            Box::new(router),
+            Box::new(move |event, _acting: Option<&crate::event::Principal>| router(event)),
         );
     }
 
@@ -5433,10 +5500,39 @@ impl<P: StatePolicy> EngineState<P> {
     /// [`crate::host_processor::RESERVED_TYPE_PREFIX`], for the reason
     /// [`EngineState::register_event_processor`] gives.
     #[cfg(feature = "std")]
-    pub fn register_invoker<F>(&mut self, processor_type: &str, handler: F)
+    pub fn register_invoker<F>(&mut self, processor_type: &str, mut handler: F)
     where
         F: FnMut(
                 crate::host_processor::HostInvokeEvent,
+            ) -> Option<crate::host_processor::HostInvokeResponse>
+            + Send
+            + 'static,
+    {
+        self.register_invoker_for(
+            processor_type,
+            move |event, _acting: Option<&crate::event::Principal>| handler(event),
+        );
+    }
+
+    /// [`register_invoker`](Self::register_invoker), for a host that records who
+    /// did what (docs/adr/0116, D7): `handler` is handed, beside each event, the
+    /// person the macrostep that starts the invocation acts for, `None` for one
+    /// made for nobody and on a cancel. The person is lent for the call and is no
+    /// field of the request: a document never writes it, and a machine whose
+    /// document reads no person hands `None` and holds none. A saved state holds
+    /// no person, so a machine running an invocation started for one is saved
+    /// once it ends ([`crate::saved_state::save`]), and a restart is made for
+    /// nobody.
+    ///
+    /// # Panics
+    ///
+    /// As [`register_invoker`](Self::register_invoker) does.
+    #[cfg(feature = "std")]
+    pub fn register_invoker_for<F>(&mut self, processor_type: &str, handler: F)
+    where
+        F: FnMut(
+                crate::host_processor::HostInvokeEvent,
+                Option<&crate::event::Principal>,
             ) -> Option<crate::host_processor::HostInvokeResponse>
             + Send
             + 'static,
@@ -5512,15 +5608,18 @@ impl<P: StatePolicy> EngineState<P> {
         // docs/adr/0045: the session that starts it, which the host may serve
         // or refuse it by, and names again to end it.
         request.session_id = session_id.to_string();
-        // docs/adr/0116, D7: the person the macrostep that starts it acts for,
-        // whom a host that records who did what records its work as done for.
-        request.principal = self.acting.clone();
         let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
         // The start's token is one no engine attached to this engine's inbox
         // gave, and the inbox is told it was given.
         self.count_host_invoke_tokens_with_attached_inbox();
-        let Some((token, response)) = self.host_processors.start_invoke(request) else {
+        // docs/adr/0116, D7: the person the macrostep that starts it acts for,
+        // whom a host that records who did what records its work as done for,
+        // lent to its invoker for the call.
+        let Some((token, response)) = self
+            .host_processors
+            .start_invoke(request, self.acting.person())
+        else {
             return false;
         };
         self.count_host_invoke_tokens_with_attached_inbox();
@@ -5638,6 +5737,7 @@ impl<P: StatePolicy> EngineState<P> {
             .running()
             .map(|started| RunningHostInvoke {
                 request: started.request.clone(),
+                for_a_person: started.for_a_person,
                 due_at: pending.iter().find_map(|(ready_at, act)| match act {
                     ScheduledAct::HostInvokeDeadline { token, .. } if *token == started.token => {
                         Some(*ready_at)
@@ -5651,6 +5751,9 @@ impl<P: StatePolicy> EngineState<P> {
                 .iter()
                 .map(|restored| RunningHostInvoke {
                     request: restored.request.clone(),
+                    // Not yet started again, and the saved state it was
+                    // restored from held no person: it starts again for nobody.
+                    for_a_person: false,
                     due_at: match restored.deadline {
                         RestoredDeadline::None => None,
                         RestoredDeadline::At(at) => Some(at),
@@ -5985,12 +6088,16 @@ impl<P: StatePolicy> EngineState<P> {
 
     /// Put `event` on `queue`: its number and metadata, as the engine's code
     /// that is the same for every machine drives the queue, and its typed
-    /// payload beside it when this machine's events carry one (docs/adr/0068).
-    /// A schemaless machine's payload is `()`, which nothing stores. Either of
-    /// the machine's two queue types (docs/adr/0076).
-    fn enqueue<Q: EventQueueStorage<P::Payload>>(
+    /// payload and `person`, whom it was said for, beside it when this machine's
+    /// events carry either (docs/adr/0068, docs/adr/0116). A schemaless
+    /// machine's payload is `()`, and the person of a machine whose document
+    /// reads none is `NoPrincipal`, which nothing stores. Either of the
+    /// machine's two queue types (docs/adr/0076), the internal one holding no
+    /// person.
+    fn enqueue<A, Q: EventQueueStorage<P::Payload, A>>(
         queue: &mut Q,
         event: EventWithMetadata<P::Event, P::Payload>,
+        person: A,
     ) {
         let EventWithMetadata {
             event,
@@ -6005,20 +6112,22 @@ impl<P: StatePolicy> EngineState<P> {
             #[cfg(feature = "std")]
             target,
         };
-        Self::enqueue_queued(queue, queued, || payload);
+        Self::enqueue_queued(queue, queued, || (payload, person));
     }
 
-    /// Put `queued`, an event already held by its number, on `queue`, with the
-    /// payload `payload` gives when this machine's events carry one: the one
-    /// push behind [`enqueue`](Self::enqueue) and an event the engine's own
-    /// inbox held. `payload` is not called for a payload type with no size.
-    fn enqueue_queued<Q: EventQueueStorage<P::Payload>>(
+    /// Put `queued`, an event already held by its number, on `queue`, with what
+    /// `carried` gives when this machine's events carry anything of a size: the
+    /// one push behind [`enqueue`](Self::enqueue) and an event the engine's own
+    /// inbox held. `carried` is not called for a payload and a person that
+    /// together have no size.
+    fn enqueue_queued<A, Q: EventQueueStorage<P::Payload, A>>(
         queue: &mut Q,
         queued: QueuedEvent,
-        payload: impl FnOnce() -> P::Payload,
+        carried: impl FnOnce() -> (P::Payload, A),
     ) {
-        if core::mem::size_of::<P::Payload>() != 0 {
-            queue.push_payload(payload());
+        if core::mem::size_of::<(P::Payload, A)>() != 0 {
+            let (payload, person) = carried();
+            queue.push_carried(payload, person);
         }
         queue.events().push(queued);
     }
@@ -6048,8 +6157,8 @@ impl<P: StatePolicy> EngineState<P> {
         if refused {
             self.refused_host_invoke_completions =
                 self.refused_host_invoke_completions.saturating_add(1);
-            if core::mem::size_of::<P::Payload>() != 0 {
-                self.external_queue.pop_payload();
+            if core::mem::size_of::<(P::Payload, P::Principal)>() != 0 {
+                self.external_queue.pop_carried();
             }
         }
         !refused
@@ -6788,8 +6897,8 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, '_, P> {
     }
 
     fn drop_external_payloads(&mut self) {
-        if core::mem::size_of::<P::Payload>() != 0 {
-            while self.engine.state.external_queue.pop_payload().is_some() {}
+        if core::mem::size_of::<(P::Payload, P::Principal)>() != 0 {
+            while self.engine.state.external_queue.pop_carried().is_some() {}
         }
     }
 

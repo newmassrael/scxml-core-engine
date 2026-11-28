@@ -139,9 +139,9 @@ PY
 mutation_case "the invoker is never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
      """        let response = self
-            .call_invoker(&processor_type, HostInvokeEvent::Start(request))
+            .call_invoker(&processor_type, HostInvokeEvent::Start(request), acting)
             .flatten();""",
-     """        let _ = (&processor_type, request);
+     """        let _ = (&processor_type, request, acting);
         let response: Option<HostInvokeResponse> = None;""")
 PY
 
@@ -155,11 +155,13 @@ edit("backends/rust/runtime/src/host_processor.rs",
             StartedInvoke {
                 token,
                 request: request.clone(),
+                for_a_person: acting.is_some(),
             },
         );""",
      """        let _ = StartedInvoke {
             token,
             request: request.clone(),
+            for_a_person: acting.is_some(),
         };""")
 PY
 
@@ -182,6 +184,7 @@ edit("backends/rust/runtime/src/host_processor.rs",
                 invoke_id: invoke_id.to_string(),
                 token,
             }),
+            None,
         )
         .is_some()""",
      """        let _ = (invoke_id, token);

@@ -118,6 +118,7 @@ impl EventOrigin {
 /// `sce:principal` reads as `_x.principal`. The server's edge writes it from the
 /// delegation its store holds for the incarnation the event was taken in under,
 /// and no field of an envelope does (docs/adr/0116, D1: invariant 12 of SCE_MESH.md section 10.9).
+/// A machine holds one only where its document reads one ([`PrincipalSlot`]).
 ///
 /// Its fields are the fixed list a document's record takes its fields from by
 /// name: who proved the person (`issuer`, OpenID Connect's `iss`), who they are
@@ -140,6 +141,87 @@ pub struct Principal {
     /// The instance id of the open machine whose incarnation acts for them
     /// (docs/adr/0113, D1).
     pub instance: String,
+}
+
+/// What an event and the run it begins hold of the person they are said for, by the type
+/// a machine's policy names ([`StatePolicy::Principal`](crate::StatePolicy::Principal),
+/// docs/adr/0116): [`NoPrincipal`] for a machine whose document declares no
+/// `sce:principal`, and `Option<Box<Principal>>` for one whose document reads
+/// `_x.principal`.
+///
+/// A machine pays for what its document reads and for nothing else: one whose document
+/// reads no person holds a slot of no size that needs no drop, so neither its events nor
+/// its runs carry a field of a person, a copy of one or the code that frees one. The person
+/// is no field of `_event` ([`EventMetadata`]): it rides beside the event on the external
+/// queue, as a typed payload does, and only an edge that took the event in names one.
+pub trait PrincipalSlot: Clone + Default + core::fmt::Debug + Send + 'static {
+    /// The slot of an event said for nobody and of a run made for nobody, as a constant,
+    /// which an engine built in a constant expression starts with.
+    const NOBODY: Self;
+
+    /// The slot that holds `person`, whom the edge that took an event in said it for: the
+    /// person for a machine whose document reads one, and nothing for one whose document
+    /// reads none, which records no person either.
+    #[cfg(feature = "std")]
+    fn told(person: Option<Box<Principal>>) -> Self;
+
+    /// The person held, `None` for nobody.
+    #[cfg(feature = "std")]
+    fn person(&self) -> Option<&Principal>;
+
+    /// The person held, as a host's record of who did what holds one
+    /// ([`crate::journal::JournalEntry`]).
+    #[cfg(feature = "std")]
+    fn into_record(self) -> Option<Box<Principal>>;
+}
+
+/// The slot of a machine whose document declares no `sce:principal`: it holds no person,
+/// has no size and needs no drop ([`PrincipalSlot`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NoPrincipal;
+
+impl PrincipalSlot for NoPrincipal {
+    const NOBODY: Self = NoPrincipal;
+
+    #[cfg(feature = "std")]
+    #[inline]
+    fn told(_person: Option<Box<Principal>>) -> Self {
+        NoPrincipal
+    }
+
+    #[cfg(feature = "std")]
+    #[inline]
+    fn person(&self) -> Option<&Principal> {
+        None
+    }
+
+    #[cfg(feature = "std")]
+    #[inline]
+    fn into_record(self) -> Option<Box<Principal>> {
+        None
+    }
+}
+
+/// The slot of a machine whose document reads `_x.principal`. Boxed: an event said for
+/// nobody, which most are, costs the queue a pointer and not the five fields.
+#[cfg(feature = "std")]
+impl PrincipalSlot for Option<Box<Principal>> {
+    const NOBODY: Self = None;
+
+    #[inline]
+    fn told(person: Option<Box<Principal>>) -> Self {
+        person
+    }
+
+    #[inline]
+    fn person(&self) -> Option<&Principal> {
+        self.as_deref()
+    }
+
+    #[inline]
+    fn into_record(self) -> Option<Box<Principal>> {
+        self
+    }
 }
 
 /// Metadata fields attached to events (§scxml-5.10).
@@ -206,17 +288,6 @@ pub struct EventMetadata {
     /// section 1).
     #[cfg(feature = "std")]
     pub sender: SceString,
-    /// The person the event was said for (`_x.principal`, docs/adr/0116, D3): set
-    /// by a server's edge on an event an instance of an open machine sent while
-    /// its incarnation acts for a person, and `None` on every other event, an
-    /// internal event, a timer, a completion and a machine's own send among them
-    /// (D4: nothing passes on by itself). A saved state holds no person, so a
-    /// queued event that carries one refuses the save
-    /// ([`crate::saved_state::save`]). Boxed: every event carries the field and
-    /// few carry a person, so an event without one costs a pointer, not the five
-    /// fields, wherever events are queued or handed on.
-    #[cfg(feature = "std")]
-    pub principal: Option<Box<Principal>>,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
     #[cfg(feature = "std")]
     pub invoke_id: SceString,
@@ -552,6 +623,53 @@ mod tests {
         );
         assert_eq!(sent.sender.as_str(), "a b");
         assert_eq!(sent.send_id.as_str(), "s-1");
+    }
+
+    /// docs/adr/0116: the person an event is said for is no field of `_event`, so a machine
+    /// whose document reads no person carries none in any event it queues or hands on. The
+    /// tuple holds every field `EventMetadata` holds: a field added to it is a cost every
+    /// machine pays on every event, and is added here knowingly. Red if a person is put back
+    /// into the metadata of every event.
+    #[test]
+    fn an_events_metadata_holds_no_person() {
+        type Fields = (
+            SceString,
+            SceString,
+            EventType,
+            SceString,
+            Option<EventOrigin>,
+            SceString,
+            SceString,
+            Option<u64>,
+        );
+        assert_eq!(
+            core::mem::size_of::<EventMetadata>(),
+            core::mem::size_of::<Fields>()
+        );
+    }
+
+    /// docs/adr/0116: a machine whose document reads no person holds its slot in a type of
+    /// no size that needs no drop, and is told no person; one whose document reads one holds
+    /// the person it is told. Red if `NoPrincipal` holds anything, or if `told` keeps a person
+    /// for a machine that reads none.
+    #[test]
+    fn a_machine_that_reads_no_person_holds_a_slot_of_no_size() {
+        assert_eq!(core::mem::size_of::<NoPrincipal>(), 0);
+        assert!(!core::mem::needs_drop::<NoPrincipal>());
+        let alice = Principal {
+            issuer: "https://id.example".to_string(),
+            subject: "alice".to_string(),
+            proved_ms: 1_700_000_000_000,
+            method: "test".to_string(),
+            instance: "a1".to_string(),
+        };
+        assert_eq!(
+            NoPrincipal::told(Some(Box::new(alice.clone()))).person(),
+            None
+        );
+        let held = <Option<Box<Principal>> as PrincipalSlot>::told(Some(Box::new(alice.clone())));
+        assert_eq!(held.person(), Some(&alice));
+        assert_eq!(held.into_record().as_deref(), Some(&alice));
     }
 
     /// docs/adr/0090, section 3: no constructor invents an origin, and a

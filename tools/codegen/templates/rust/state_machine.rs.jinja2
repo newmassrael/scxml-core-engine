@@ -1879,10 +1879,22 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // default). Inert under std (`VecDeque`), so this one emission compiles on
     // both runtime profiles. The queue holds events as numbers and only the
     // payloads as this machine's type (docs/adr/0068).
+{% if static_principal %}
+    // docs/adr/0116, D3: an event an instance sent waits here with the person
+    // it was said for, which the document reads as `_x.principal`.
+    type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { {% if model.event_queue_capacity %}EVENT_QUEUE_CAPACITY{% else %}sce_rust_runtime::MAX_EVENT_QUEUE_DEPTH{% endif %} }, Self::Principal>;
+    // docs/adr/0116, D3 and D7: the document reads a person, so its events and
+    // its runs hold the one they are said for.
+    type Principal = Option<Box<::sce_rust_runtime::Principal>>;
+{% else %}
 {% if model.event_queue_capacity %}
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload, { EVENT_QUEUE_CAPACITY }>;
 {% else %}
     type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+{% endif %}
+    // docs/adr/0116: the document reads no person, so its events and its runs
+    // hold a slot of no size, and no field, copy or drop of a person.
+    type Principal = ::sce_rust_runtime::NoPrincipal;
 {% endif %}
 
     // W3C SCXML Appendix D internalQueue: only what this machine raises for
@@ -2290,19 +2302,19 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endif %}
 {% if static_principal %}
 
-    // docs/adr/0116, D3: the person the edge stamped on the event about to be
-    // processed, taken into the record the document declares, the fields it
+    // docs/adr/0116, D3: the person the edge told the event about to be
+    // processed with, taken into the record the document declares, the fields it
     // declares and no other, each text held to its field's bound; absent on an
     // internal event, a timer and a completion, which carry none. A text past
     // its bound refuses the delivery (`StatePolicy::admit_principal`).
     fn admit_principal(
         &mut self,
-        metadata: &sce_rust_runtime::EventMetadata,
+        principal: &Self::Principal,
     ) -> Result<(), String> {
         self.pending_event_principal = None;
         // docs/adr/0116, D4: no edge takes a quote while no deployment lists one.
         self.pending_event_quoted = None;
-        let Some(person) = metadata.principal.as_ref() else {
+        let Some(person) = principal.as_deref() else {
             return Ok(());
         };
         self.pending_event_principal = Some({{ static_principal.read }});

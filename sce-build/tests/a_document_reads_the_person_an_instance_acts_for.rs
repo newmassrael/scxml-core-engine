@@ -135,9 +135,11 @@ fn refused(documents: &[(&str, &str)], code: &str, needle: &str) {
 
 /// The fixture machine is generated for Rust: it holds the person the event being processed
 /// was said for in an optional value of the record the document declares, taken from the
-/// event's metadata field by field, each text held to its bound (`method` and `instance`
-/// are not declared, and are not given), and the quoted person, which no event carries.
-/// Red if the lowering reads another place, or gives a field the record does not declare.
+/// person the event was told with field by field, each text held to its bound (`method` and
+/// `instance` are not declared, and are not given), and the quoted person, which no event
+/// carries; its external queue and its runs hold the person (docs/adr/0116, D3 and D7). Red if
+/// the lowering reads another place, gives a field the record does not declare, or names no
+/// slot of a person.
 #[test]
 fn the_rust_machine_holds_the_person_its_event_was_said_for() {
     let (ok, out, written) = run(
@@ -150,6 +152,8 @@ fn the_rust_machine_holds_the_person_its_event_was_said_for() {
         "pending_event_principal: Option<",
         "pending_event_quoted: Option<",
         "fn admit_principal(",
+        "type Principal = Option<Box<::sce_rust_runtime::Principal>>;",
+        "{ sce_rust_runtime::MAX_EVENT_QUEUE_DEPTH }, Self::Principal>;",
         "issuer: ::sce_rust_runtime::portable::SceString::from_text(&person.issuer)",
         "subject: ::sce_rust_runtime::portable::SceString::from_text(&person.subject)",
         "proved_ms: person.proved_ms",
@@ -162,6 +166,48 @@ fn the_rust_machine_holds_the_person_its_event_was_said_for() {
     }
     for absent in ["person.method", "person.instance"] {
         assert!(!written.contains(absent), "`{absent}` is given:\n{written}");
+    }
+}
+
+/// docs/adr/0116: a machine pays for a person only where its document reads one. A statechart
+/// that declares no `sce:principal` is generated with the slot of no size, an external queue
+/// that carries nothing of a person beside its events, and no door that takes one in. Red if
+/// the template names a person's slot, or takes a person in, for a document that reads none.
+#[test]
+fn a_machine_whose_document_reads_no_person_holds_none() {
+    let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="no_principal_probe">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[("probe.scxml", document)],
+        "probe.scxml",
+    );
+    assert!(ok, "the Rust machine is generated:\n{out}");
+    for needle in [
+        "type Principal = ::sce_rust_runtime::NoPrincipal;",
+        "type ExternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;",
+    ] {
+        assert!(
+            written.contains(needle),
+            "expected `{needle}` in:\n{written}"
+        );
+    }
+    for absent in ["sce_rust_runtime::Principal", "fn admit_principal("] {
+        assert!(
+            !written.contains(absent),
+            "`{absent}` is generated:\n{written}"
+        );
     }
 }
 

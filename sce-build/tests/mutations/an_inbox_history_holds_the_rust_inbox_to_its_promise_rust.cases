@@ -30,8 +30,8 @@ mutation_oracles backends/rust/tests/tests/an_inbox_history_of_every_run_is_line
 
 mutation_case "Rust puts an own event on the external queue ahead of what the inbox holds" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        self.drain_before_own();\n        Self::enqueue(&mut self.external_queue, event);\n",
-     "        Self::enqueue(&mut self.external_queue, event);\n")
+     "        self.drain_before_own();\n        Self::enqueue(&mut self.external_queue, event, person);\n",
+     "        Self::enqueue(&mut self.external_queue, event, person);\n")
 PY
 
 # ── Never lost: the inbox applied where a run ends ─────────────────

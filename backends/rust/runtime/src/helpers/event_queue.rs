@@ -33,9 +33,9 @@ use core::mem::MaybeUninit;
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
-use crate::event::EventMetadata;
 #[cfg(not(feature = "std"))]
 use crate::event::EventType;
+use crate::event::{EventMetadata, NoPrincipal};
 use crate::helpers::tables::EventId;
 #[cfg(feature = "std")]
 use crate::SceString;
@@ -72,21 +72,32 @@ impl QueuedEvent {
 }
 
 /// A machine's event queue: its events as numbers, and, for a machine whose
-/// events carry a typed payload, the payloads in the same order
-/// (docs/adr/0068).
+/// events carry a typed payload or a person, what each carries in the same
+/// order (docs/adr/0068).
 ///
 /// The storage is the machine's, sized by its resolved capacity `N` under
 /// `no_std` and unbounded under `std`. The engine drives the events through
 /// [`EventQueueMut`], which has no `N` and no machine type, so the code that
-/// does is one copy for every machine. Only the payloads are the machine's
-/// own, and a schemaless machine's payload is `()`, which nothing stores.
+/// does is one copy for every machine. Only what the events carry is the
+/// machine's own: a schemaless machine's payload is `()`, and the person of a
+/// machine whose document reads none is [`NoPrincipal`] (docs/adr/0116), and
+/// a pair of the two has no size, so nothing stores it.
+///
+/// `Person` is what an event on this queue holds of the person it was said
+/// for ([`crate::PrincipalSlot`]): only the external queue of a machine whose
+/// document reads `_x.principal` names one, since every other event is said
+/// for nobody (docs/adr/0116, D3).
 ///
 /// `N` may be `0` (docs/adr/0076): a queue of no slots, which holds nothing,
 /// takes nothing off and stops the program on a push. The generator gives an
 /// internal queue that depth only where it proved the document never raises
 /// an event for itself.
 #[derive(Debug)]
-pub struct EventQueue<Payload, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }> {
+pub struct EventQueue<
+    Payload,
+    const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH },
+    Person = NoPrincipal,
+> {
     #[cfg(feature = "std")]
     events: VecDeque<QueuedEvent>,
     #[cfg(not(feature = "std"))]
@@ -95,10 +106,10 @@ pub struct EventQueue<Payload, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }
     head: u16,
     #[cfg(not(feature = "std"))]
     len: u16,
-    payloads: EventQueueManager<Payload, N>,
+    carried: EventQueueManager<(Payload, Person), N>,
 }
 
-impl<Payload, const N: usize> EventQueue<Payload, N> {
+impl<Payload, const N: usize, Person> EventQueue<Payload, N, Person> {
     /// An empty queue; a constant expression on both profiles, which is what
     /// lets the queue declare its empty value as an associated constant
     /// ([`EventQueueStorage::EMPTY`]).
@@ -112,7 +123,7 @@ impl<Payload, const N: usize> EventQueue<Payload, N> {
             head: 0,
             #[cfg(not(feature = "std"))]
             len: 0,
-            payloads: EventQueueManager::new(),
+            carried: EventQueueManager::new(),
         }
     }
 
@@ -157,21 +168,26 @@ impl<Payload, const N: usize> EventQueue<Payload, N> {
         }
     }
 
-    /// Put `payload` behind the payloads already queued, for the event pushed
-    /// with it.
+    /// Put `payload` and `person` behind what the events already queued
+    /// carry, for the event pushed with them.
     #[inline]
-    pub fn push_payload(&mut self, payload: Payload) {
-        self.payloads.raise(payload);
+    pub fn push_carried(&mut self, payload: Payload, person: Person) {
+        self.carried.raise((payload, person));
     }
 
-    /// The payload of the event at the front, taken off with it.
+    /// What the event at the front carries, taken off with it.
     #[inline]
-    pub fn pop_payload(&mut self) -> Option<Payload> {
-        self.payloads.pop()
+    pub fn pop_carried(&mut self) -> Option<(Payload, Person)> {
+        self.carried.pop()
+    }
+
+    /// The person each queued event was said for, front first, left in place.
+    pub fn persons(&self) -> impl Iterator<Item = &Person> {
+        self.carried.iter().map(|(_, person)| person)
     }
 }
 
-impl<Payload, const N: usize> Default for EventQueue<Payload, N> {
+impl<Payload, const N: usize, Person> Default for EventQueue<Payload, N, Person> {
     fn default() -> Self {
         Self::new()
     }
@@ -553,7 +569,7 @@ impl<T, const N: usize> Default for EventQueueManager<T, N> {
 /// [`crate::StatePolicy::InternalQueue`] and
 /// [`crate::StatePolicy::ExternalQueue`], two types since docs/adr/0076), its
 /// events through a view without that depth (docs/adr/0068).
-pub trait EventQueueStorage<Payload>: Default {
+pub trait EventQueueStorage<Payload, Person = NoPrincipal>: Default {
     /// An empty queue, as a constant (docs/adr/0070).
     ///
     /// A constant and not only `Default`, for two reasons. An engine built in
@@ -571,13 +587,22 @@ pub trait EventQueueStorage<Payload>: Default {
     /// The queued events, front first, left in place — what a saved state
     /// records of a queue (SCE Accepted Subset §2.15).
     fn queued(&self) -> impl Iterator<Item = &QueuedEvent>;
-    /// Queue the payload of the event pushed with it.
-    fn push_payload(&mut self, payload: Payload);
-    /// Take the payload of the event taken off the front.
-    fn pop_payload(&mut self) -> Option<Payload>;
+    /// Queue what the event pushed with them carries: its payload and the
+    /// person it was said for (docs/adr/0116, D3).
+    fn push_carried(&mut self, payload: Payload, person: Person);
+    /// Take what the event taken off the front carries.
+    fn pop_carried(&mut self) -> Option<(Payload, Person)>;
+    /// The person each queued event was said for, front first, left in place:
+    /// what a saved state, which holds no person, is refused by. Empty for a
+    /// queue whose events carry nothing of any size, which stores nothing.
+    fn persons<'a>(&'a self) -> impl Iterator<Item = &'a Person>
+    where
+        Person: 'a;
 }
 
-impl<Payload, const N: usize> EventQueueStorage<Payload> for EventQueue<Payload, N> {
+impl<Payload, const N: usize, Person> EventQueueStorage<Payload, Person>
+    for EventQueue<Payload, N, Person>
+{
     const EMPTY: Self = Self::new();
 
     #[inline]
@@ -592,12 +617,18 @@ impl<Payload, const N: usize> EventQueueStorage<Payload> for EventQueue<Payload,
         EventQueue::queued(self)
     }
     #[inline]
-    fn push_payload(&mut self, payload: Payload) {
-        EventQueue::push_payload(self, payload)
+    fn push_carried(&mut self, payload: Payload, person: Person) {
+        EventQueue::push_carried(self, payload, person)
     }
     #[inline]
-    fn pop_payload(&mut self) -> Option<Payload> {
-        EventQueue::pop_payload(self)
+    fn pop_carried(&mut self) -> Option<(Payload, Person)> {
+        EventQueue::pop_carried(self)
+    }
+    fn persons<'a>(&'a self) -> impl Iterator<Item = &'a Person>
+    where
+        Person: 'a,
+    {
+        EventQueue::persons(self)
     }
 }
 
@@ -804,7 +835,8 @@ mod tests {
         assert_eq!(queue.queued().count(), 0);
         assert!(queue.events().pop().is_none());
         assert!(!queue.events().has_events());
-        assert!(queue.pop_payload().is_none());
+        assert!(queue.pop_carried().is_none());
+        assert_eq!(queue.persons().count(), 0);
     }
 
     #[test]

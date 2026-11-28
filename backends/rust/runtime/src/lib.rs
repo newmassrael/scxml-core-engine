@@ -613,6 +613,9 @@ pub use event::EventOrigin;
 #[cfg(feature = "std")]
 pub use event::Principal;
 pub use event::{error_name, EventMetadata, EventType, EventWithMetadata};
+/// docs/adr/0116: what a machine holds of the person an event is said for, by the type its
+/// policy names, and the slot of no size a machine whose document reads no person holds.
+pub use event::{NoPrincipal, PrincipalSlot};
 /// Why an engine raised `error.execution` or `error.communication`: the one
 /// vocabulary every engine and the Mesh write `_event.data.reason` from
 /// (sce:std/engine/error_reason.scxml, docs/adr/0106 #111).
