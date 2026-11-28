@@ -531,8 +531,9 @@ enum Input {
         /// D5).
         judged: Option<(u64, Standing)>,
         /// For an instance whose incarnation acts for a person, the person, as the edge read the
-        /// delegation its store holds (docs/adr/0116, D1 and D3).
-        acting: Option<Principal>,
+        /// delegation its store holds (docs/adr/0116, D1 and D3); boxed, as an event's person is,
+        /// so that an envelope said for nobody costs its inbox one pointer.
+        acting: Option<Box<Principal>>,
     },
     /// The store's latest answer for the member whose instance is the peer named
     /// (docs/adr/0113, D5).
@@ -1148,7 +1149,7 @@ where
                     bytes,
                     receipt: receipt.clone(),
                     judged,
-                    acting,
+                    acting: acting.map(Box::new),
                 };
                 match self.post_bounded(&key, input) {
                     Ok(()) => (Some(key), receipt),
@@ -2460,9 +2461,13 @@ where
                         judged: Some((made_under, standing)),
                         acting,
                     } if endpoint.judges_by_records(&peer) => {
-                        match endpoint
-                            .receive_member_for(&peer, made_under, standing, acting, bytes)
-                        {
+                        match endpoint.receive_member_for(
+                            &peer,
+                            made_under,
+                            standing,
+                            acting.map(|person| *person),
+                            bytes,
+                        ) {
                             Ok(()) => session.unsaved.push(receipt),
                             // docs/adr/0113, D5: judged again as it runs, it names an incarnation
                             // its member no longer stands under, and nothing of it was taken in.
@@ -2488,7 +2493,11 @@ where
                         receipt,
                         acting,
                         ..
-                    } => match endpoint.receive_within_bound(&peer, acting, bytes) {
+                    } => match endpoint.receive_within_bound(
+                        &peer,
+                        acting.map(|person| *person),
+                        bytes,
+                    ) {
                         Ok(()) => session.unsaved.push(receipt),
                         Err(refused) => {
                             receipt.settle(Fate::Lost);
