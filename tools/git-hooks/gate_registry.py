@@ -2574,6 +2574,9 @@ RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
 # the judge that runs it, which a gate body names to need that release.
 VERUS_MANIFEST = "sce-build/src/formal/toolchain.json"
 VERUS_JUDGE = "formal proofs --manifest"
+# The same file pins Kani and the dated nightly its bundle was built against
+# (docs/adr/0146, D3), which one table installs as it installs Verus's release.
+KANI_MANIFEST = VERUS_MANIFEST
 # The one other place a release is linked: the directory of the run account's
 # rustup home where rustup's proxy finds the release rust-toolchain.toml pins,
 # so a cargo a run starts outside a gate unit installs nothing on its first use
@@ -3395,6 +3398,14 @@ def verus_rust_release(repo_root: Path) -> str | None:
     return json.loads(manifest.read_text(encoding="utf-8")).get("verus", {}).get("toolchain")
 
 
+def kani_rust_release(repo_root: Path) -> str | None:
+    """The nightly sce-build/src/formal/toolchain.json says Kani runs on."""
+    manifest = repo_root / KANI_MANIFEST
+    if not manifest.is_file():
+        return None
+    return json.loads(manifest.read_text(encoding="utf-8")).get("kani", {}).get("toolchain")
+
+
 def rust_toolchain_failures(repo_root: Path) -> list[str]:
     """What is wrong with the Rust toolchains bx.toml declares, as sentences."""
     failures: list[str] = []
@@ -3496,6 +3507,12 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
     if verus and tables[verus].get("version_file") != VERUS_MANIFEST:
         failures.append(f"[platform.linux.tools.{verus}] does not read the release "
                         f"Verus runs on from {VERUS_MANIFEST}, which pins Verus")
+    # The nightly Kani runs on, read the same way from the same pins.
+    pins["KANI_RUST"] = kani_rust_release(repo_root) or ""
+    kani = table_of("KANI_RUST")
+    if kani and tables[kani].get("version_file") != KANI_MANIFEST:
+        failures.append(f"[platform.linux.tools.{kani}] does not read the nightly "
+                        f"Kani runs on from {KANI_MANIFEST}, which pins Kani")
     if nightly and tables[nightly].get("version_file") != RUST_TOOLCHAIN_PINS:
         failures.append(f"[platform.linux.tools.{nightly}] does not read the nightly "
                         f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")
@@ -3513,7 +3530,7 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
         else:
             wanted.setdefault(release_of, []).extend(packages)
     msrv = {name: version for name, version in versions.items()
-            if name not in (release, nightly, verus)}
+            if name not in (release, nightly, verus, kani)}
     for version in sorted(set(wanted) - set(msrv.values())):
         failures.append(
             f"{sorted(wanted[version])} declare rust-version {version} and no "
@@ -3559,6 +3576,10 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
             want_kind = "nightly"
         elif name == verus:
             want_kind = "verus"
+        elif name == kani:
+            # No gate script runs Kani, so `asks` gives no gate this kind: no
+            # unit needs the table, and a unit its needed_by names is refused.
+            want_kind = "kani"
         else:
             want_kind = "msrv"
         for slug in sorted(GATES):

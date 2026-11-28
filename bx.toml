@@ -417,7 +417,7 @@ packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi
 needed_by = ["genmc-queue"]
 
 # THE FORMAL JUDGE'S TOOLS (docs/adr/0146, D3): Verus, Apalache, the Java runtime TLC and Apalache
-# run on, and Storm, each at the release sce-build/src/formal/toolchain.json pins by version, URL and
+# run on, Storm, TLAPS, Kani and CBMC, each at the release sce-build/src/formal/toolchain.json pins by version, URL and
 # sha256. That file is the one place the pins are written, and each table reads its version from the
 # tool's line there. The one procedure that installs them is sce-build/src/formal/install_tool.sh,
 # beside the pins: it fetches the release by curl, admits what was fetched by the pinned sha256 and
@@ -488,6 +488,57 @@ install_inputs = ["sce-build/src/formal/install_tool.sh", "sce-build/src/formal/
 packages = ["libgmpxx4ldbl", "libcln6", "libginac11", "libglpk40", "libz3-4", "libarchive13t64"]
 needed_by = ["formal-models"]
 
+# TLAPS, the TLA+ proof system, for the theorems of arithmetic whose size is essential (ADR 0156, D9
+# and D13; approved by the owner on 2026-11-28). The installer runs the release's own installer,
+# which unpacks tlapm and its back ends, builds Isabelle's heaps of Pure and TLA+ (with make and
+# perl, which every build machine has) and checks an example proof; it then names the heaps relative
+# to Isabelle's own directory, so the store entry is whole where bx links it. `bin/tlaps` under the
+# entry runs tlapm with the back ends of the release, and answers `--version` by itself, so `check`
+# starts no Isabelle. No gate runs it yet: `needed_by` names the judge ADR 0156 plans, which no run's
+# command line holds, so no run asks a machine for it.
+[platform.linux.tools.tlaps]
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "tlaps": \{"version": "([0-9.]+)"'
+path = "~/.local/tlaps/{version}/bin/tlaps"
+check = "tlaps {version}"
+prefix_link = "~/.local/tlaps/{version}"
+install = "bash sce-build/src/formal/install_tool.sh tlaps {prefix} {scratch}"
+install_inputs = ["sce-build/src/formal/install_tool.sh", "sce-build/src/formal/toolchain.json"]
+needed_by = ["formal-arithmetic"]
+
+# KANI, the model checker of Rust, for the harnesses generated from the contracts of a Rust seam
+# (ADR 0156, D7 and D13; approved by the owner on 2026-11-28). The installer unpacks the release
+# bundle as `cargo kani setup` does, beside a link `toolchain` to the Rust release of the
+# `rust-kani` table below, and refuses a bundle built against another. `bin/kani` and
+# `bin/cargo-kani` under the entry run its driver with no rustup; `bin/kani` answers `--version` by
+# itself. No gate runs it yet, as TLAPS's table says.
+[platform.linux.tools.kani]
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "kani": \{"version": "([0-9.]+)"'
+path = "~/.local/kani/{version}/bin/kani"
+check = "kani {version}"
+prefix_link = "~/.local/kani/{version}"
+install = "bash sce-build/src/formal/install_tool.sh kani {prefix} {scratch}"
+install_inputs = ["sce-build/src/formal/install_tool.sh", "sce-build/src/formal/toolchain.json"]
+needed_by = ["formal-seams"]
+
+# CBMC, the model checker of C, for the harnesses of C11 seams (ADR 0156, D7 and D13; approved by the
+# owner on 2026-11-28), pinned apart from the CBMC Kani's bundle carries. The installer admits the
+# release's Ubuntu 24.04 package and unpacks it, never installing it. `bin/cbmc` under the entry runs
+# the package's program with the package's other programs first on the search path, and answers
+# `--version` by itself. It preprocesses C with gcc, which its package depends on. No gate runs it
+# yet, as TLAPS's table says.
+[platform.linux.tools.cbmc]
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "cbmc": \{"version": "([0-9.]+)"'
+path = "~/.local/cbmc/{version}/bin/cbmc"
+check = "cbmc {version}"
+prefix_link = "~/.local/cbmc/{version}"
+install = "bash sce-build/src/formal/install_tool.sh cbmc {prefix} {scratch}"
+install_inputs = ["sce-build/src/formal/install_tool.sh", "sce-build/src/formal/toolchain.json"]
+packages = ["gcc"]
+needed_by = ["formal-seams"]
+
 # THE RUST RELEASE VERUS RUNS ON, the one it was built with: no package's and not this tree's, read
 # from the same pins, so a move of Verus moves it with it. Verus reads its compiler libraries and
 # its standard library, and no component is added.
@@ -500,6 +551,21 @@ prefix_link = "~/.local/rust/{version}"
 install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
 install_inputs = ["scripts/install_rust.sh"]
 needed_by = ["formal-proofs"]
+
+# THE RUST RELEASE KANI RUNS ON, the dated nightly its bundle was built against, read from the same
+# pins, so a move of Kani moves it with it. Kani's compiler loads that release's compiler libraries
+# and its driver runs that release's cargo; the standard library a harness is built with is the
+# bundle's own, so the minimal profile is enough and no component is added. A nightly's cargo prints
+# the date of its commit, not of the channel, so `check` asks only that it is a nightly.
+[platform.linux.tools.rust-kani]
+version_file = "sce-build/src/formal/toolchain.json"
+version_pattern = '^  "kani": \{.*"toolchain": "(nightly-[0-9-]+)"'
+path = "~/.local/rust/{version}/bin/cargo"
+check = "nightly"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["formal-seams"]
 
 # THE EMSCRIPTEN SDK, at the release the hosted lanes install (`emsdk install 6.0.13` in
 # w3c-tests.yml, cpp-suite.yml and deploy-visualizer.yml; the registry's self-test holds them to
