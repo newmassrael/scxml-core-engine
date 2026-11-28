@@ -111,8 +111,8 @@ extension of it:
 - **Turing-completeness in `algorithm` kind.** `<sce:while>` accepts
   a `max-iter` attribute enforced at build time when feasible and at
   runtime otherwise; unbounded recursion is permanently forbidden.
-  (§5.H adds bounded recursive data traversal in Phase 2; this is
-  not the same as general recursion.)
+  (§5.H's bounded recursive data, decided by ADR 0164, is not the
+  same as general recursion.)
 - **Dynamic memory allocation on MCU.** The no-heap invariant is a
   physical constraint of the MCU target class, not a preference.
   Bounded-dynamic via declared `bounded-collection` (§5.L) is
@@ -1674,6 +1674,12 @@ crc/vle/keyexpr MVP (write three near-identical files; clean up once
 generics land). Worth pre-planning the XSD and IR shape so §5.A's body
 does not need rework.
 
+**Amended 2026-11-28: not deferred.** Type parameters are decided by
+ADR 0166 and land in its own order of work, which no phase of §7 and
+no target gates (§7, "Amended 2026-11-28"). A downstream consumer
+needs a document generic over its application's types, which three
+near-identical files do not give it. Q10 (§8) is ADR 0166's to answer.
+
 ### 5.H Recursive and tree data kinds (Phase 2)
 
 **Problem.** TLV extension chains are recursive (`SessionMessage` has
@@ -1687,6 +1693,13 @@ recursion, with cycle detection at parse time.
 **Deferred** — details to be worked out after §5.A/B/C/F land. The
 MVP can use fixed-depth flattening (chain of up to N extensions) as a
 stopgap.
+
+**Amended 2026-11-28: not deferred.** Recursive and tree data are
+decided by ADR 0164 (inductive data), and general graphs, which §7's
+D.3.2 named as "future graph descendants", by ADR 0165. Each lands in
+its own order of work, which no phase of §7 and no target gates (§7,
+"Amended 2026-11-28"); fixed-depth flattening is no longer their
+answer.
 
 ### 5.I `sce:extern` — bounded escape hatch
 
@@ -4326,10 +4339,11 @@ Phase D — AP targets + migration enablers (weeks 27+)
            future)
     D.2.4  Test: AP qnx + zenohd interop on a reference QNX target
   D.3 — Migration enablers (no OS dependency)
-    D.3.1  Parametric kinds (§5.G) — collapse client/peer FSM variants,
-           parameterize VLE, etc.
-    D.3.2  Recursive / tree types (§5.H) — bounded recursive data
-           traversal (TLV trees, future graph descendants)
+    D.3.1  Parametric kinds (§5.G): out of Phase D since 2026-11-28,
+           ADR 0166 (type parameters); see the amendment below
+    D.3.2  Recursive / tree types (§5.H) and graphs: out of Phase D
+           since 2026-11-28, ADR 0164 (inductive data) and ADR 0165
+           (graphs); see the amendment below
     D.3.3  Dynamic aggregation kind — generalization of bounded-
            collection with per-key index lookups; prerequisite for
            AP router mode
@@ -4368,6 +4382,22 @@ OS values exist in the schema enum but emit
 `deploy/platform-os-not-implemented-in-current-phase` if attempted
 pre-Phase-D. This keeps MCU work uninterrupted while preventing
 Phase D from being a refactor cliff.
+
+**Amended 2026-11-28: language is not gated on a target.** A
+downstream consumer's census of its protocol logic asks that four
+missing elements be in the order of work SCE keeps, and not placed
+after the zenoh-pico parity gate (C14): recursive and tree data;
+general graphs; a step that takes a value another part of its
+statechart computed in the same macrostep, together with a host
+effect per element of a collection; and documents generic over the
+application's types. They are language, not targets: none depends on
+an operating system, an AP runtime or the parity gate, and the
+MCU-first invariant above orders targets, not the language. So D.3.1
+and D.3.2 leave Phase D, and each element is decided by a record of
+its own that lands in its own order of work: inductive data by ADR
+0164, graphs by ADR 0165, type parameters by ADR 0166, and the value
+that crosses within a macrostep, with the effect per element, by ADR
+0167. What stays in Phase D is what depends on an AP target.
 
 **New kinds referenced above.** §5.L (`bounded-collection`),
 §5.M (reassembly-pool variant + fragment FSM pattern), and §5.N
@@ -4434,6 +4464,7 @@ explicit integer (65536)? Which is less error-prone?
 **Q10.** Parametric kinds (§5.G) XSD shape — `sce:type-param` as a
 new element, or a convention on existing attributes with a magic
 prefix `$W`? XSD validation cleanliness favors the element form.
+(Amended 2026-11-28: ADR 0166's to answer.)
 
 **Q11.** `bounded-collection` capacity source (§5.L) — always
 deploy-sourced, or should `<sce:capacity const="N"/>` also be
