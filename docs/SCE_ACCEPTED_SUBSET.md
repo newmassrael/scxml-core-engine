@@ -6862,16 +6862,19 @@ removed, and of a map in those two storages a host reads it as a `MapSlot`
 limit and a generation that moves each time the slot is freed, so a number kept
 for a removed entry reads nothing (docs/adr/0154, D2); the other storages keep
 no generation and name no slot, their slots no larger for it, and a document
-sees no slot. The index hashes a key's canonical bytes (the runtime's
-`MapKey`: an integer as the 16 bytes of its value whatever its width, a `bool`
-as one, an enum by its declared number, a text and a byte string by their length
-and their bytes, a record by its fields in order) with SipHash-1-3 under a
+sees no slot. A key is a fixed sequence of atoms (the runtime's `MapKey`,
+`atoms` and `atom`, docs/adr/0108 D1 as amended 2026-11-28: an integer whatever
+its width, an enum by its declared number, a `bool`, a text and a byte string by
+their bytes, a record by its fields' atoms in order), compared atom by atom, and
+the index hashes the atoms' canonical bytes (an integer as the 16 bytes of its
+value, a `bool` as one, a text and a byte string by their length and their
+bytes) with SipHash-1-3 under a
 128-bit seed for each map, drawn from the operating system through `std`'s
 `RandomState` where the machine is built, and handed to the machine's
 constructor by its host without `std` (a host with no entropy hands a fixed
 seed, and its maps can then be flooded by a peer that knows it). The seed shows
-in nothing a document or a host reads. A key is found by any value that writes
-its bytes, so a literal, a narrower value, a text slice and a payload taken whole
+in nothing a document or a host reads. A key is found by any value that has
+its atoms, so a literal, a narrower value, a text slice and a payload taken whole
 each find their key. `len(m)`, `has(m, k)`, `m[k]` and `m[k].field` are calls of
 the runtime's `portable::map` functions, the value at a key read through
 `found`, which fails a key that is absent as an index outside a list fails; a

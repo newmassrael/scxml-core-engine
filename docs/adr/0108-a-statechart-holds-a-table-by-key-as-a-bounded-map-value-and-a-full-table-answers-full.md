@@ -11,7 +11,11 @@
   "Order of work" marks the steps that have landed. Amended 2026-11-22 (D12, which amends D6 item 4): a map's value may
   be a map, a list or a record that holds a list, written in place through a nested place, on the consumer's probes
   of the three shapes. Amended 2026-11-22 (D4 "Storage", D8): Rust has a third storage, `Linear`, with no index, on
-  the consumer's measurement of what the hash costs a small map on a microcontroller.
+  the consumer's measurement of what the hash costs a small map on a microcontroller. Amended 2026-11-28 (D1, D8): a
+  key's canonical form is a fixed sequence of atoms (an integer, a `bool`, a byte string), and a map compares two keys
+  atom by atom and hashes a key's atoms, both read through one function of the key's type, on the consumer's
+  measurement that a Rust lookup compared keys through a dynamic call and wrote the probe's bytes once more to count
+  them.
   Amended by: ADR 0154 (proposed 2026-11-28), D2, D4 "Storage" and D8: Rust has two storages a host lends, sized at
   run time, a host reads the slot each entry is held in, and a map an algorithm builds or copies is kept in the
   owned storage of the map it follows.
@@ -86,6 +90,18 @@ A key is a type whose equality is exact and whose every value is bounded: the fi
 a bounded text or byte string compared byte by byte, and a record whose every field is a key, compared field by
 field. That record is the composite key the reassembly slots need, declared as an event-schema record as every
 statechart record is.
+
+(Amended 2026-11-28.) **A key's canonical form is a fixed sequence of atoms**, and two keys are one key exactly when
+they are the same sequence. An atom is one of three kinds: an integer (a fixed-width integer, or the number an enum
+declares for a value), whatever its width, so a literal, a narrower and a wider value of one number are one atom; a
+`bool`; and a byte string (a text or a `bytes[N]`), by its bytes. A fixed-width integer, a `bool`, an enum, a text
+and a byte string is one atom, and a record is its fields' atoms in the order its schema declares the fields. Two
+atoms of different kinds are never equal. This is the equality stated above, field by field and byte by byte, given
+one form every lane reads: the hash of D8 is a function of the atoms, the comparison is the atoms', and both are read
+through the one function each key type gives, so they cannot disagree. Writing a key as one string of bytes and
+comparing the strings was the form before; it made a byte string of eight bytes and an integer whose sixteen bytes
+happened to be the same string the same key, which no document can write (a map's key type is one type) but no lane
+should be able to answer either.
 
 A `bytes[N]` key is compared by its length and its bytes, as a byte string is everywhere: `[0x01]` and
 `[0x01, 0x00]` are two keys. A 128-bit identifier whose wire form drops trailing zero bytes but whose equality is
@@ -321,7 +337,14 @@ the `bounded-collection` kind's `find_by_index`.
 **The hash is keyed per map, because a peer chooses the keys.** A zid or a wire id is chosen by the other end of a
 connection. With a fixed unkeyed hash, a peer can send keys that all land in one chain of the index and turn every
 lookup into a scan of the table. The index therefore hashes a key's canonical bytes (D1's equality) with SipHash-1-3
-under a 128-bit key drawn for each map when it is built. The hash appears in no output, order or saved form, so a
+under a 128-bit key drawn for each map when it is built. (Amended 2026-11-28.) Those bytes are the key's atoms (D1)
+written in order: an integer as the 16 little-endian bytes of its 128-bit value, a `bool` as one byte, a byte string
+as its length in eight little-endian bytes and then its bytes. A lane reads a key's atoms through functions of the
+key's type that the compiler resolves where the map's code is built for that type, never through a function the
+lookup is handed at run time, so a lookup of an integer key compares two integers and a lookup of a text key
+compares two byte strings. Rust's `MapKey` is that pair of functions (`atoms`, `atom`); C11's map macros will give
+each key type its own comparison of atoms in place of the function pointer a lookup is handed today (Order of work,
+step 9). The hash appears in no output, order or saved form, so a
 seed that differs between runs, engines or a save and its restore changes nothing a document or a scenario sees.
 A restored map rebuilds its index under its own seed. The seed comes from the host: Rust with `std` draws it from
 the operating system, as `std::collections::hash_map::RandomState` does, and a lane without an entropy source (Rust
@@ -509,6 +532,11 @@ section.
    (`gen_cases.py`), and the Interpreter's algorithm runner hands an `inout` slot its holder. Moved out of step 7 so
    that step could land on the scenarios that already held it on all three lanes.
 8. C++, Kotlin, Go, Python, Swift, one landing each, each removing its `generate/unsupported-feature`.
+9. (Amended 2026-11-28.) A key's atoms (D1, D8). Rust first: `MapKey` is `atoms` and `atom` over `KeyAtom`, a record's
+   generated impl names its fields through `FieldAtoms`, and `KeyFeed` is gone; the hash of every key is the bytes
+   it was. C11 next: the map macros declare, for each key type, the function that reads a key's atom at a position,
+   and a lookup of a map type compares atoms through it, in place of `sce_map_feed_fn` and the byte window
+   `sce_map_same_key` holds two keys' bytes in.
 
 ## Open questions
 

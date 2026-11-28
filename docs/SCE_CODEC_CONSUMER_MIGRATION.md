@@ -4337,6 +4337,24 @@ of an algorithm that holds a map changes where it is generated again (below).
   `<S0 as MapStorage>::Owned` and a walk whose body writes its map walks `to_owned_storage()`: for a caller that
   lends `Inline`, `Heap` or `Linear` that is the storage and the copy it was before.
 
+## A Rust map key is a sequence of atoms, compared and hashed through one function of its type (ADR 0108, amended 2026-11-28)
+
+Landing: the commits that add this section. The committed generated trees that make a record or an enum a key
+(`backends/rust/runtime/generated`, `backends/rust/mesh/src/generated*`) change; regenerate a tree of your own that
+holds a record or an enum key.
+
+- `MapKey` is two functions, `atoms(&self) -> usize` and `atom(&self, at: usize) -> KeyAtom<'_>`, where it was
+  `feed_key(&self, &mut dyn KeyFeed)`. `KeyFeed` is gone; `KeyAtom` (`Integer(i128)`, `Truth(bool)`, `Bytes(&[u8])`)
+  and `FieldAtoms` are exported from `sce_portable_bytes` and `sce_rust_runtime`.
+- A key written by hand implements the two: a leaf answers `1` and its one atom; a record answers the sum of its
+  fields' `atoms` and `FieldAtoms::at(at).field(&self.a).field(&self.b).atom()`, naming the fields in the order its
+  schema declares them, as a generated record does.
+- A lookup compares two keys atom by atom through calls the compiler resolves for the key's type, so two integer
+  keys are compared as integers and two texts as byte strings; nothing is called through a pointer and no key's bytes
+  are counted first. The hash is the same bytes it was, so no seed, saved form or order changes. Two atoms of
+  different kinds are never one key (an eight-byte `bytes` key and an integer no longer can be, which no document
+  could write).
+
 ## A buffer pool is lent: a run-time count and length, the caller's storage, an index across an interface (ADR 0111 D4)
 
 Landing: the commits that add this section. No committed generated tree changes; a consumer that generates a
