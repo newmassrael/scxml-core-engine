@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A project and its open tasks counted in a byte, which holds 255 at most. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="small_count"
+       sce:event-name="board.small_count">
+  <datamodel>
+    <data id="project" sce:type="uint64" sce:direction="in"/>
+    <data id="open" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

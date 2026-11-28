@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One task of a row of the board: its title, and who it is assigned to, absent where nobody is (docs/adr/0151, D1, a left join). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="task_line"
+       sce:event-name="board.task_line">
+  <datamodel>
+    <data id="title" sce:type="string[64]" sce:direction="in"/>
+    <data id="assignee" sce:type="optional&lt;string[64]&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

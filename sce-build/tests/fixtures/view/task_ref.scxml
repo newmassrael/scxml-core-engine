@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A task by its key and its title. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="task_ref"
+       sce:event-name="board.task_ref">
+  <datamodel>
+    <data id="task" sce:type="uint64" sce:direction="in"/>
+    <data id="title" sce:type="string[64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

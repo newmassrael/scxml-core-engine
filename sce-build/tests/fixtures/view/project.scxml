@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A project of the board example of docs/adr/0151, D1. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="project"
+       sce:event-name="board.project">
+  <datamodel>
+    <data id="title" sce:type="string[64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

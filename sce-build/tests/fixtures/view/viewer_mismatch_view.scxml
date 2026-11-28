@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D3 and D6: a view per instance reads the board, a value per
+     person: refused (view/viewer-mismatch). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="viewer_mismatch_view">
+  <sce:import kind="event-schema" src="task_ref.scxml" as="TaskRef"/>
+  <sce:import kind="view" src="board.scxml" as="Board"/>
+  <sce:viewer of="instance"/>
+  <sce:table name="boards" view="Board"/>
+  <sce:query>
+    <sce:from table="boards" as="b"/>
+    <sce:select>
+      <sce:field name="task" expr="b.row.project"/>
+      <sce:field name="title" expr="b.row.title"/>
+    </sce:select>
+  </sce:query>
+  <sce:result type="record:TaskRef" key="task" bound="refs=200"/>
+</scxml>

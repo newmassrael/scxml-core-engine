@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D2: a bound no fewer than the rows there may be cuts nothing, so
+     it needs no order; the result is ordered by its key alone. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="bound_reaching_every_row">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="task_ref.scxml" as="TaskRef"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:select>
+      <sce:field name="task" expr="t.key"/>
+      <sce:field name="title" expr="t.row.title"/>
+    </sce:select>
+  </sce:query>
+  <sce:result type="record:TaskRef" key="task" bound="refs=10000"/>
+</scxml>

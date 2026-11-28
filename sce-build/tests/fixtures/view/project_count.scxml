@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A project by its title and its open tasks counted: a title tells no two projects apart. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="project_count"
+       sce:event-name="board.project_count">
+  <datamodel>
+    <data id="title" sce:type="string[64]" sce:direction="in"/>
+    <data id="open" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

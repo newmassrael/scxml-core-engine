@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D1: the open tasks of a project counted in a byte, and a
+     project may have ten thousand: refused (view/aggregate-may-overflow). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="aggregate_may_overflow">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="small_count.scxml" as="SmallCount"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:group by="t.row.project">
+      <sce:field name="project" expr="t.row.project"/>
+      <sce:count name="open"/>
+    </sce:group>
+    <sce:order by="open desc"/>
+  </sce:query>
+  <sce:result type="record:SmallCount" key="project" bound="counts=100"/>
+</scxml>

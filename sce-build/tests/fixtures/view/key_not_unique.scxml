@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D2: one row per project, keyed by its title. A title tells no
+     two projects apart, so the key the result names is not one the build infers,
+     and the view is refused (view/result-key-not-unique). This is the board of
+     D1 as the record writes it, its project column the title. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="key_not_unique">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="project.scxml" as="Project"/>
+  <sce:import kind="event-schema" src="project_count.scxml" as="ProjectCount"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:table name="projects" type="map&lt;uint64, record:Project&gt;[projects_max=500]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:join table="projects" as="p" on="p.key === t.row.project"/>
+    <sce:group by="p.key">
+      <sce:field name="title" expr="p.row.title"/>
+      <sce:count name="open"/>
+    </sce:group>
+    <sce:order by="open desc"/>
+  </sce:query>
+  <sce:result type="record:ProjectCount" key="title" bound="counts=100"/>
+</scxml>

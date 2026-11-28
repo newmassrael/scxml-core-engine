@@ -539,15 +539,40 @@ written twice, a second `<sce:machine>`, `<sce:assume>`, `<sce:guarantee>` or
 forms have a translation into the machine's model, are the judge's
 (`sce-codegen formal properties`).
 
-`view` is a read model (docs/adr/0151, D1). Amended by: ADR 0151 (D1, D5 and D10, step 2
-of its order of work): a view document holds at most one `<sce:viewer of>`, `person` or
-`instance`; one `<sce:table name>` per input table, of a `type` that is a `map<K, V>[B]`
-or a `set<K>[B]`, or of another `view` it imports, each saying who may read a row by one
-`<sce:visible relations relation object>` or `public="true"`; and then one `<sce:query>`
-and one `<sce:result type key bound>`, or one `<sce:relation name object>` per relation
-of a document of relations. The parser refuses a shape the document breaks alone with the
-`validation/*` codes those shapes take everywhere. Rust is the lane (D10); until its
-operators land, and on every other backend, generation refuses a valid view by name
+`view` is a read model (docs/adr/0151, D1). Amended by: ADR 0151 (D1, D2, D3, D5, D6,
+D8 and D11, step 2 of its order of work): a view document holds at most one
+`<sce:viewer of>`, `person` or `instance`; one `<sce:table name>` per input table, of a
+`type` that is a `map<K, V>[B]` or a `set<K>[B]`, or of another `view` it imports,
+each saying who may read a row by one `<sce:visible relations relation object>` or
+`public="true"`; and then one `<sce:query>` and one `<sce:result type key bound>`, or one
+`<sce:relation name object>` per relation of a document of relations. A query is one
+`<sce:from table as>`, then `<sce:join table as on kind>` (`inner`, or `left`, whose
+right side is of an optional type) and `<sce:where cond>` in the order they apply, then
+one `<sce:group by>` of `<sce:field>`, `<sce:count>`, `<sce:sum>`, `<sce:min>`,
+`<sce:max>` and `<sce:nest name type order>` columns, or one `<sce:select>` of
+`<sce:field name expr>`, then at most one `<sce:order by>`, its keys each followed by
+`asc` or `desc`. A relation's rewrite is united from `<sce:direct subjects>`,
+`<sce:computed relation>`, `<sce:through relation then>` and `<sce:all>` terms, less what
+one `<sce:but-not>` derives; `subjects` names the sets of principals
+(`object#relation`) a tuple's subject is expanded through. The document of relations
+reads one `set<record:Tuple>[B]` whose record declares `object_type`, `object`,
+`relation`, `subject_type`, `subject` and `subject_relation`, a text empty for a
+principal. The parser
+refuses a shape the document breaks alone with the `validation/*` codes those shapes take
+everywhere. The build then reads the document, and every view it imports, into one
+plan (`sce-build/src/forge/view`): each table read first by the filter of its viewer's
+relation; the key of each operator's rows inferred by functional dependency; the order
+completed by the result's key; every count of rows a term of the named bounds. It
+refuses a result whose key it does not infer (`view/result-key-not-unique`), a result or
+a nest whose bound may be reached and which states no order (`view/bound-without-order`),
+a view that reads itself (`view/cycle`), a relation that depends on its own exclusion
+(`view/relation-cycle-through-exclusion`), a table of a type that says nobody may read it
+(`view/table-without-visibility`), a view that reads what its viewer may not
+(`view/viewer-mismatch`), an expression it does not prove total, by the rule of
+docs/adr/0133 (`view/expression-may-fail`), a count or a sum its field's type may not
+hold (`view/aggregate-may-overflow`), and a sum, a minimum, a maximum or an order over a
+floating type (`view/floating-aggregate`). Rust is the lane (D10); until its operators
+land, and on every other backend, generation refuses a valid view by name
 (`view/backend-unsupported`).
 
 The six `test-` kinds are the test profile (docs/adr/0091; their forms are
@@ -11753,7 +11778,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (587 codes)
+## Appendix — `DiagnosticCode` index (596 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -12058,6 +12083,15 @@ Codes that the author can avoid by writing a better SCXML /
 | `broadcast-log/wrap-bound-below-deploy-minimum` | Generate |
 | `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | Generate |
 | `broadcast-log/runtime-missing` | Generate |
+| `view/result-key-not-unique` | Validation |
+| `view/bound-without-order` | Validation |
+| `view/cycle` | Validation |
+| `view/relation-cycle-through-exclusion` | Validation |
+| `view/table-without-visibility` | Validation |
+| `view/viewer-mismatch` | Validation |
+| `view/expression-may-fail` | Validation |
+| `view/aggregate-may-overflow` | Validation |
+| `view/floating-aggregate` | Validation |
 | `view/backend-unsupported` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |

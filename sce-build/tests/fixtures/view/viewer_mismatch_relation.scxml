@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D6: a view with no viewer, one value for every reader, names
+     a relation a viewer stands in: refused (view/viewer-mismatch). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="viewer_mismatch_relation">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="task_ref.scxml" as="TaskRef"/>
+  <sce:import kind="view" src="access.scxml" as="Access"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]">
+    <sce:visible relations="Access" relation="viewer" object="row.project"/>
+  </sce:table>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:select>
+      <sce:field name="task" expr="t.key"/>
+      <sce:field name="title" expr="t.row.title"/>
+    </sce:select>
+  </sce:query>
+  <sce:result type="record:TaskRef" key="task" bound="refs=10000"/>
+</scxml>

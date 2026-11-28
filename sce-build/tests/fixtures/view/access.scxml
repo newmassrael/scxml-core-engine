@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The relations of the board of docs/adr/0151, D5: who may view a project is who
+     edits it, a member of a group the tuples name, or a viewer of its parent,
+     unless the project bans them; groups nest. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="access">
+  <sce:import kind="event-schema" src="tuple.scxml" as="Tuple"/>
+  <sce:table name="tuples" type="set&lt;record:Tuple&gt;[tuples_max=4000]"/>
+  <sce:relation name="viewer" object="project">
+    <sce:direct subjects="group#member"/>
+    <sce:computed relation="editor"/>
+    <sce:through relation="parent" then="viewer"/>
+    <sce:but-not>
+      <sce:computed relation="banned"/>
+    </sce:but-not>
+  </sce:relation>
+  <sce:relation name="editor" object="project">
+    <sce:direct subjects="group#member"/>
+  </sce:relation>
+  <sce:relation name="parent" object="project">
+    <sce:direct/>
+  </sce:relation>
+  <sce:relation name="banned" object="project">
+    <sce:direct/>
+  </sce:relation>
+  <sce:relation name="member" object="group">
+    <sce:direct subjects="group#member"/>
+  </sce:relation>
+</scxml>

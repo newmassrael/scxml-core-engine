@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A project and the hours spent on its tasks, a floating number. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="hours_row"
+       sce:event-name="board.hours_row">
+  <datamodel>
+    <data id="project" sce:type="uint64" sce:direction="in"/>
+    <data id="hours" sce:type="float64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1545,6 +1545,137 @@ pub enum ValidationError {
         field: String,
     },
 
+    /// docs/adr/0151, D2: the key a view's result names is not one the build
+    /// infers by the rules of functional dependency (a table's key; a join's
+    /// pair of keys, or the left side's alone where it joins on the right
+    /// side's; a group's columns), so the result could hold two rows of one
+    /// key. `inferred` says what the build infers.
+    ///
+    /// Wire code: `view/result-key-not-unique`.
+    #[error(
+        "view '{view}': the result is keyed by {}, and the build infers {inferred}: a result never \
+         holds two rows of one key, so the key it names is one the keys of its tables and the \
+         columns of its group determine (docs/adr/0151, D2)",
+        .key.join(", ")
+    )]
+    ViewResultKeyNotUnique {
+        view: String,
+        key: Vec<String>,
+        inferred: String,
+    },
+
+    /// docs/adr/0151, D2: a result or a nest declares a bound its rows may
+    /// reach and no order, so which rows the cut keeps is not determined.
+    ///
+    /// Wire code: `view/bound-without-order`.
+    #[error(
+        "view '{view}': {what} is cut at {bound} rows, may hold {most}, and states no order: a cut \
+         without an order is not determined (docs/adr/0151, D2); order it, or bound it at no fewer \
+         rows than it may hold"
+    )]
+    ViewBoundWithoutOrder {
+        view: String,
+        what: String,
+        bound: u32,
+        most: String,
+    },
+
+    /// docs/adr/0151, D3: a view reads itself through the views it imports.
+    ///
+    /// Wire code: `view/cycle`.
+    #[error(
+        "view '{view}' reads itself through {}: a view is a function of its tables, and a cycle \
+         of views has no value (docs/adr/0151, D3); recursion is a document of relations' (D5)",
+        .cycle.join(" -> ")
+    )]
+    ViewCycle { view: String, cycle: Vec<String> },
+
+    /// docs/adr/0151, D5: a relation of a document of relations depends on
+    /// its own exclusion, so its rules have no stratification and no one
+    /// least fixed point.
+    ///
+    /// Wire code: `view/relation-cycle-through-exclusion`.
+    #[error(
+        "view '{view}': the relation '{relation}' depends on its own exclusion ({}): rules whose \
+         negation is not stratified have no one least fixed point (docs/adr/0151, D5)",
+        .cycle.join(" -> ")
+    )]
+    ViewRelationCycleThroughExclusion {
+        view: String,
+        relation: String,
+        cycle: Vec<String>,
+    },
+
+    /// docs/adr/0151, D6: a table of a type says by neither `<sce:visible>` nor
+    /// `public="true"` who may read a row.
+    ///
+    /// Wire code: `view/table-without-visibility`.
+    #[error(
+        "view '{view}': the table '{table}' says who may read a row by neither <sce:visible \
+         relations relation object> nor public=\"true\": access is lacking unless it is declared \
+         (docs/adr/0151, D6)"
+    )]
+    ViewTableWithoutVisibility { view: String, table: String },
+
+    /// docs/adr/0151, D3 and D6: a view reads rows its viewer may not: a view
+    /// with no viewer names a viewer's relation or reads a view with a viewer,
+    /// or a view reads a view of another viewer.
+    ///
+    /// Wire code: `view/viewer-mismatch`.
+    #[error("view '{view}', table '{table}': {reason} (docs/adr/0151, D6)")]
+    ViewViewerMismatch {
+        view: String,
+        table: String,
+        reason: String,
+    },
+
+    /// docs/adr/0151, D1; docs/adr/0133: an expression of a view is not one
+    /// the build proves total, and a maintenance step that failed halfway
+    /// would leave the view and its tables disagreeing.
+    ///
+    /// Wire code: `view/expression-may-fail`.
+    #[error(
+        "view '{view}': `{expr}` may fail: {why}; a view has no error.execution to raise, so each \
+         of its expressions is one the build proves total (docs/adr/0151, D1)"
+    )]
+    ViewExpressionMayFail {
+        view: String,
+        expr: String,
+        why: String,
+    },
+
+    /// docs/adr/0151, D1: a count or a sum is held in a type that does not
+    /// hold every value the column's type and the group's largest count give.
+    ///
+    /// Wire code: `view/aggregate-may-overflow`.
+    #[error(
+        "view '{view}': the {aggregate} '{column}' is held in {ty} and may reach {most}: an \
+         aggregate is of a type the build proves wide enough from its column's type and its \
+         group's largest count (docs/adr/0151, D1)"
+    )]
+    ViewAggregateMayOverflow {
+        view: String,
+        aggregate: String,
+        column: String,
+        ty: String,
+        most: String,
+    },
+
+    /// docs/adr/0151, D1: a sum, a minimum, a maximum or an order over a
+    /// floating type.
+    ///
+    /// Wire code: `view/floating-aggregate`.
+    #[error(
+        "view '{view}': {what} `{expr}` is over a floating type: its value would depend on the \
+         order the numbers are met in, and a maintained value and a recomputed one would differ \
+         in their bytes (docs/adr/0151, D1)"
+    )]
+    ViewFloatingAggregate {
+        view: String,
+        what: String,
+        expr: String,
+    },
+
     /// docs/adr/0108, D1: a map or a set whose key is no key — a float, an
     /// optional, a union, a list, a map or a set, or a record one of whose
     /// fields, through every record a field names, is none. `value` is the

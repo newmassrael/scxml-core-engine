@@ -1830,8 +1830,45 @@ pub enum DiagnosticCode {
     #[serde(rename = "broadcast-log/runtime-missing")]
     BroadcastLogRuntimeMissing,
 
-    // ── The view kind (docs/adr/0151). The refusal of a backend that does
-    //    not lower a view; the document is valid as written. ──
+    // ── The view kind (docs/adr/0151). The refusals of D11 a view's plan
+    //    makes, and the refusal of a backend that does not lower one. None
+    //    carries a `Fix`: each repair is the author's choice of a key, an
+    //    order, a type or a relation. ──
+    /// A view's result names a key the build does not infer by functional
+    /// dependency, so it could hold two rows of one key (docs/adr/0151, D2).
+    #[serde(rename = "view/result-key-not-unique")]
+    ViewResultKeyNotUnique,
+    /// A view's result or nest declares a bound its rows may reach and no
+    /// order, so its cut is not determined (docs/adr/0151, D2).
+    #[serde(rename = "view/bound-without-order")]
+    ViewBoundWithoutOrder,
+    /// A view reads itself through the views it imports (docs/adr/0151, D3).
+    #[serde(rename = "view/cycle")]
+    ViewCycle,
+    /// A relation of a document of relations depends on its own exclusion
+    /// (docs/adr/0151, D5).
+    #[serde(rename = "view/relation-cycle-through-exclusion")]
+    ViewRelationCycleThroughExclusion,
+    /// A table of a view says by neither `<sce:visible>` nor `public` who may
+    /// read a row (docs/adr/0151, D6).
+    #[serde(rename = "view/table-without-visibility")]
+    ViewTableWithoutVisibility,
+    /// A view reads rows its viewer may not: a relation with no viewer, or a
+    /// view of another viewer (docs/adr/0151, D3 and D6).
+    #[serde(rename = "view/viewer-mismatch")]
+    ViewViewerMismatch,
+    /// An expression of a view is not one the build proves total
+    /// (docs/adr/0151, D1; docs/adr/0133).
+    #[serde(rename = "view/expression-may-fail")]
+    ViewExpressionMayFail,
+    /// A count or a sum of a view is held in a type that may not hold it
+    /// (docs/adr/0151, D1).
+    #[serde(rename = "view/aggregate-may-overflow")]
+    ViewAggregateMayOverflow,
+    /// A sum, a minimum, a maximum or an order of a view over a floating type
+    /// (docs/adr/0151, D1).
+    #[serde(rename = "view/floating-aggregate")]
+    ViewFloatingAggregate,
     /// A valid view document for a backend that does not lower a view
     /// (docs/adr/0151, D10). `actual` is absent: the language is the target.
     #[serde(rename = "view/backend-unsupported")]
@@ -4469,7 +4506,16 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         BroadcastLogWrapBoundBelowDeployMinimum,
         BroadcastLogSlotsNotADivisorOfTheStampSpace,
         BroadcastLogRuntimeMissing,
-        // The view kind (docs/adr/0151, D10)
+        // The view kind (docs/adr/0151, D10 and D11)
+        ViewResultKeyNotUnique,
+        ViewBoundWithoutOrder,
+        ViewCycle,
+        ViewRelationCycleThroughExclusion,
+        ViewTableWithoutVisibility,
+        ViewViewerMismatch,
+        ViewExpressionMayFail,
+        ViewAggregateMayOverflow,
+        ViewFloatingAggregate,
         ViewBackendUnsupported,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
@@ -5008,6 +5054,13 @@ impl DiagnosticCode {
             // ── Formal judges (docs/adr/0146) ───────────────────
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
             // ── The view kind (docs/adr/0151) ───────────────────
+            ViewExpressionMayFail | ViewAggregateMayOverflow | ViewFloatingAggregate => {
+                Some("ADR 0151 D1")
+            }
+            ViewResultKeyNotUnique | ViewBoundWithoutOrder => Some("ADR 0151 D2"),
+            ViewCycle => Some("ADR 0151 D3"),
+            ViewRelationCycleThroughExclusion => Some("ADR 0151 D5"),
+            ViewTableWithoutVisibility | ViewViewerMismatch => Some("ADR 0151 D6"),
             ViewBackendUnsupported => Some("ADR 0151 D10"),
             FormalNoTranslation => Some("ADR 0115 D7"),
             FormalIsolation => Some("ADR 0115 D11"),
@@ -6626,6 +6679,15 @@ impl DiagnosticCode {
             | ValidationMigrationNotTotal
             | ValidationMigrationTypeChange
             | ValidationMigrationShapeUnreadable
+            | ViewResultKeyNotUnique
+            | ViewBoundWithoutOrder
+            | ViewCycle
+            | ViewRelationCycleThroughExclusion
+            | ViewTableWithoutVisibility
+            | ViewViewerMismatch
+            | ViewExpressionMayFail
+            | ViewAggregateMayOverflow
+            | ViewFloatingAggregate
             | ViewBackendUnsupported
             | ValidationMigrationChainBroken => DerivationClass::ProductOnly,
         }
@@ -7046,6 +7108,15 @@ impl DiagnosticCode {
                 "broadcast-log/slots-not-a-divisor-of-the-stamp-space"
             }
             BroadcastLogRuntimeMissing => "broadcast-log/runtime-missing",
+            ViewResultKeyNotUnique => "view/result-key-not-unique",
+            ViewBoundWithoutOrder => "view/bound-without-order",
+            ViewCycle => "view/cycle",
+            ViewRelationCycleThroughExclusion => "view/relation-cycle-through-exclusion",
+            ViewTableWithoutVisibility => "view/table-without-visibility",
+            ViewViewerMismatch => "view/viewer-mismatch",
+            ViewExpressionMayFail => "view/expression-may-fail",
+            ViewAggregateMayOverflow => "view/aggregate-may-overflow",
+            ViewFloatingAggregate => "view/floating-aggregate",
             ViewBackendUnsupported => "view/backend-unsupported",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
@@ -9224,6 +9295,83 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 record.clone(),
                 field.clone(),
             ],
+        },
+        // ── docs/adr/0151, D11: the refusals of a view's plan. Each repair is
+        //    the author's (a key, an order, a type, a relation), so none carries
+        //    a `Fix`, and each names what it is about in its message.
+        ValidationError::ViewResultKeyNotUnique { view, key, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewResultKeyNotUnique,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), key.join(",")],
+        },
+        ValidationError::ViewBoundWithoutOrder { view, what, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewBoundWithoutOrder,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), what.clone()],
+        },
+        ValidationError::ViewCycle { view, cycle } => DiagnosticPayload {
+            code: DiagnosticCode::ViewCycle,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), cycle.join(" -> ")],
+        },
+        ValidationError::ViewRelationCycleThroughExclusion { view, relation, .. } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::ViewRelationCycleThroughExclusion,
+                stage: Stage::Validation,
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![view.clone(), relation.clone()],
+            }
+        }
+        ValidationError::ViewTableWithoutVisibility { view, table } => DiagnosticPayload {
+            code: DiagnosticCode::ViewTableWithoutVisibility,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), table.clone()],
+        },
+        ValidationError::ViewViewerMismatch { view, table, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewViewerMismatch,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), table.clone()],
+        },
+        ValidationError::ViewExpressionMayFail { view, expr, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewExpressionMayFail,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), expr.clone()],
+        },
+        ValidationError::ViewAggregateMayOverflow { view, column, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewAggregateMayOverflow,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), column.clone()],
+        },
+        ValidationError::ViewFloatingAggregate { view, expr, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ViewFloatingAggregate,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), expr.clone()],
         },
         // docs/adr/0108, D1: the type as written is `actual`; which key a
         // table is found by is the author's choice, so neither `expected` nor
@@ -18128,6 +18276,103 @@ mod tests {
             ),
             // ── The view kind (docs/adr/0151) ──
             (
+                "forge/view-result-key-not-unique",
+                ValidationError::ViewResultKeyNotUnique {
+                    view: "board".into(),
+                    key: vec!["project".into()],
+                    inferred: "the key (id)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fb6c7a854044e37a","code":"view/result-key-not-unique","stage":"validation","spec":"ADR 0151 D2","message":"view 'board': the result is keyed by project, and the build infers the key (id): a result never holds two rows of one key, so the key it names is one the keys of its tables and the columns of its group determine (docs/adr/0151, D2)"}"#,
+            ),
+            (
+                "forge/view-bound-without-order",
+                ValidationError::ViewBoundWithoutOrder {
+                    view: "board".into(),
+                    what: "the result".into(),
+                    bound: 200,
+                    most: "projects_max (500 rows)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4672735642e88422","code":"view/bound-without-order","stage":"validation","spec":"ADR 0151 D2","message":"view 'board': the result is cut at 200 rows, may hold projects_max (500 rows), and states no order: a cut without an order is not determined (docs/adr/0151, D2); order it, or bound it at no fewer rows than it may hold"}"#,
+            ),
+            (
+                "forge/view-cycle",
+                ValidationError::ViewCycle {
+                    view: "board".into(),
+                    cycle: vec!["board".into(), "lanes".into(), "board".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:71a5da361a2f7d97","code":"view/cycle","stage":"validation","spec":"ADR 0151 D3","message":"view 'board' reads itself through board -> lanes -> board: a view is a function of its tables, and a cycle of views has no value (docs/adr/0151, D3); recursion is a document of relations' (D5)"}"#,
+            ),
+            (
+                "forge/view-relation-cycle-through-exclusion",
+                ValidationError::ViewRelationCycleThroughExclusion {
+                    view: "access".into(),
+                    relation: "project#viewer".into(),
+                    cycle: vec![
+                        "project#viewer".into(),
+                        "project#blocked".into(),
+                        "project#viewer".into(),
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b124d2828b2e037e","code":"view/relation-cycle-through-exclusion","stage":"validation","spec":"ADR 0151 D5","message":"view 'access': the relation 'project#viewer' depends on its own exclusion (project#viewer -> project#blocked -> project#viewer): rules whose negation is not stratified have no one least fixed point (docs/adr/0151, D5)"}"#,
+            ),
+            (
+                "forge/view-table-without-visibility",
+                ValidationError::ViewTableWithoutVisibility {
+                    view: "board".into(),
+                    table: "tasks".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2696b5995fb96cc2","code":"view/table-without-visibility","stage":"validation","spec":"ADR 0151 D6","message":"view 'board': the table 'tasks' says who may read a row by neither <sce:visible relations relation object> nor public=\"true\": access is lacking unless it is declared (docs/adr/0151, D6)"}"#,
+            ),
+            (
+                "forge/view-viewer-mismatch",
+                ValidationError::ViewViewerMismatch {
+                    view: "board".into(),
+                    table: "lanes".into(),
+                    reason: "the view 'lanes' is a value per instance, and this one per person: a \
+                             view reads views of its own viewer, passed on, and views with none"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c7c84d9ece44b314","code":"view/viewer-mismatch","stage":"validation","spec":"ADR 0151 D6","message":"view 'board', table 'lanes': the view 'lanes' is a value per instance, and this one per person: a view reads views of its own viewer, passed on, and views with none (docs/adr/0151, D6)"}"#,
+            ),
+            (
+                "forge/view-expression-may-fail",
+                ValidationError::ViewExpressionMayFail {
+                    view: "board".into(),
+                    expr: "t.row.points + 1".into(),
+                    why: "the integer operation `t.row.points + 1` may leave its type".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8ca0f812d0e6a3b0","code":"view/expression-may-fail","stage":"validation","spec":"ADR 0151 D1","message":"view 'board': `t.row.points + 1` may fail: the integer operation `t.row.points + 1` may leave its type; a view has no error.execution to raise, so each of its expressions is one the build proves total (docs/adr/0151, D1)"}"#,
+            ),
+            (
+                "forge/view-aggregate-may-overflow",
+                ValidationError::ViewAggregateMayOverflow {
+                    view: "board".into(),
+                    aggregate: "count".into(),
+                    column: "open".into(),
+                    ty: "uint8".into(),
+                    most: "10000, over tasks_max rows".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bf4d20c13adc36d8","code":"view/aggregate-may-overflow","stage":"validation","spec":"ADR 0151 D1","message":"view 'board': the count 'open' is held in uint8 and may reach 10000, over tasks_max rows: an aggregate is of a type the build proves wide enough from its column's type and its group's largest count (docs/adr/0151, D1)"}"#,
+            ),
+            (
+                "forge/view-floating-aggregate",
+                ValidationError::ViewFloatingAggregate {
+                    view: "board".into(),
+                    what: "the sum of".into(),
+                    expr: "t.row.hours".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7daf6424cd729b3b","code":"view/floating-aggregate","stage":"validation","spec":"ADR 0151 D1","message":"view 'board': the sum of `t.row.hours` is over a floating type: its value would depend on the order the numbers are met in, and a maintained value and a recomputed one would differ in their bytes (docs/adr/0151, D1)"}"#,
+            ),
+            (
                 "forge/view-backend-unsupported",
                 GenerateError::ViewBackendUnsupported {
                     view: "board".into(),
@@ -23108,8 +23353,17 @@ mod tests {
             // is what separates them from their sibling above.
             | ValidationDefaultCoversTestedVariant
             | ValidationDefaultCoversNotAValueSpace
-            // docs/adr/0151, D10: the language is the target, and no value of
-            // the document is offered.
+            // docs/adr/0151, D11: each repair is the author's choice of a key,
+            // an order, a type or a relation, and none is offered.
+            | ViewResultKeyNotUnique
+            | ViewBoundWithoutOrder
+            | ViewCycle
+            | ViewRelationCycleThroughExclusion
+            | ViewTableWithoutVisibility
+            | ViewViewerMismatch
+            | ViewExpressionMayFail
+            | ViewAggregateMayOverflow
+            | ViewFloatingAggregate
             | ViewBackendUnsupported => NeutralOrDeterministic,
         }
     }
@@ -23842,6 +24096,15 @@ mod tests {
                 | ValidationMigrationTypeChange
                 | ValidationMigrationShapeUnreadable
                 | ValidationMigrationChainBroken
+                | ViewResultKeyNotUnique
+                | ViewBoundWithoutOrder
+                | ViewCycle
+                | ViewRelationCycleThroughExclusion
+                | ViewTableWithoutVisibility
+                | ViewViewerMismatch
+                | ViewExpressionMayFail
+                | ViewAggregateMayOverflow
+                | ViewFloatingAggregate
                 | ViewBackendUnsupported => true,
             }
         }
@@ -23854,9 +24117,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            587,
+            596,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 587 distinct variants to match the DiagnosticCode \
+             expected 596 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -25021,8 +25284,17 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ProfileEventPrefixOfAnother
             | ProfileEvidenceUnanchored
             | ProfileElementUntraced
-            // docs/adr/0151, D10: placed on the document, through `Located`;
-            // no scenario raises one yet.
+            // docs/adr/0151: placed on the element of the view document the
+            // refusal is about, through `Located`; no scenario raises one yet.
+            | ViewResultKeyNotUnique
+            | ViewBoundWithoutOrder
+            | ViewCycle
+            | ViewRelationCycleThroughExclusion
+            | ViewTableWithoutVisibility
+            | ViewViewerMismatch
+            | ViewExpressionMayFail
+            | ViewAggregateMayOverflow
+            | ViewFloatingAggregate
             | ViewBackendUnsupported => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──

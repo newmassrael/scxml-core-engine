@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D5: a viewer is who is not blocked, and who is blocked is every
+     viewer: the relation depends on its own exclusion, and is refused. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="access_excluding_itself">
+  <sce:import kind="event-schema" src="tuple.scxml" as="Tuple"/>
+  <sce:table name="tuples" type="set&lt;record:Tuple&gt;[tuples_max=4000]"/>
+  <sce:relation name="viewer" object="project">
+    <sce:direct/>
+    <sce:but-not>
+      <sce:computed relation="blocked"/>
+    </sce:but-not>
+  </sce:relation>
+  <sce:relation name="blocked" object="project">
+    <sce:direct/>
+    <sce:computed relation="viewer"/>
+  </sce:relation>
+</scxml>

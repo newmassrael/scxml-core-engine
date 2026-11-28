@@ -1122,7 +1122,16 @@ references against a real document and drift silently.
 | `validation/unresolved-placeholder` | `validation` | no |  |
 | `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
 | `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
+| `view/aggregate-may-overflow` | `validation` | no | ADR 0151 D1 |
 | `view/backend-unsupported` | `generate` | no | ADR 0151 D10 |
+| `view/bound-without-order` | `validation` | no | ADR 0151 D2 |
+| `view/cycle` | `validation` | no | ADR 0151 D3 |
+| `view/expression-may-fail` | `validation` | no | ADR 0151 D1 |
+| `view/floating-aggregate` | `validation` | no | ADR 0151 D1 |
+| `view/relation-cycle-through-exclusion` | `validation` | no | ADR 0151 D5 |
+| `view/result-key-not-unique` | `validation` | no | ADR 0151 D2 |
+| `view/table-without-visibility` | `validation` | no | ADR 0151 D6 |
+| `view/viewer-mismatch` | `validation` | no | ADR 0151 D6 |
 | `worker/inbox-inline-removed` | `validation` | `remove_fields` | SCE Protocol-Synthesis RFC §5.P |
 | `worker/inbox-queue-not-single-consumer` | `validation` | no | SCE Protocol-Synthesis RFC §5.P |
 | `worker/inbox-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.P |

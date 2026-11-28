@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D3: this view reads cycle_b, which reads this one: refused
+     (view/cycle) where the cycle closes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="cycle_a">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="task_ref.scxml" as="TaskRef"/>
+  <sce:import kind="view" src="cycle_b.scxml" as="B"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:table name="other" view="B"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:select>
+      <sce:field name="task" expr="t.key"/>
+      <sce:field name="title" expr="t.row.title"/>
+    </sce:select>
+  </sce:query>
+  <sce:result type="record:TaskRef" key="task" bound="refs=10000"/>
+</scxml>

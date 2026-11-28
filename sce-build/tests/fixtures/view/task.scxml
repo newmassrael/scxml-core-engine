@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A task of the board example of docs/adr/0151, D1: the project it is of, who it is assigned to, whether it is open, when it is due, its title, its points and the hours spent on it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="task"
+       sce:event-name="board.task">
+  <datamodel>
+    <data id="project" sce:type="uint64" sce:direction="in"/>
+    <data id="assignee" sce:type="uint64" sce:direction="in"/>
+    <data id="open" sce:type="bool" sce:direction="in"/>
+    <data id="due" sce:type="uint32" sce:direction="in"/>
+    <data id="title" sce:type="string[64]" sce:direction="in"/>
+    <data id="points" sce:type="uint16" sce:direction="in"/>
+    <data id="hours" sce:type="float32" sce:direction="in"/>
+  </datamodel>
+</scxml>

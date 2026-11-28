@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D1: a uint16 and one more may leave its type, and a view has
+     no error.execution to raise: refused (view/expression-may-fail). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="expression_may_fail">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="task_ref.scxml" as="TaskRef"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=10000]" public="true"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:where cond="t.row.points + 1 &gt; 2"/>
+    <sce:select>
+      <sce:field name="task" expr="t.key"/>
+      <sce:field name="title" expr="t.row.title"/>
+    </sce:select>
+  </sce:query>
+  <sce:result type="record:TaskRef" key="task" bound="refs=10000"/>
+</scxml>
