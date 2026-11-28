@@ -9,7 +9,9 @@
 //! An adapter runs these functions from its own `#[test]`s, with a harness that makes proofs as the
 //! identity provider it trusts would, and as one wrong in one part would ([`ProofHarness`]). The
 //! clock is the one the functions give; nothing here waits on time. A failed expectation panics,
-//! as a test's does.
+//! as a test's does. Each judgement is of a proof made for it: a proof may be of use once, as an
+//! OpenID Connect authorization code is (RFC 6749, section 4.1.2), so no function judges one proof
+//! twice, and a port that refuses a proof it judged before passes the kit.
 //!
 //! [`TestProof`] is a port for tests, run through the kit here: whoever holds its key makes any
 //! proof, so it proves nothing a deployment may rely on, and no deployment names it.
@@ -51,7 +53,8 @@ pub trait ProofHarness {
     fn valid_ms(&self) -> u64;
 
     /// A proof of `subject` for `challenge`, made at `made_ms`, as `made` says. `made_ms` is a whole
-    /// second, as an OpenID Connect `auth_time` is.
+    /// second, as an OpenID Connect `auth_time` is. Each call makes another proof, as an identity
+    /// provider issues another code for each sign-in, and the functions judge it once.
     fn proof(&self, subject: &str, challenge: &Challenge, made_ms: u64, made: Made) -> Vec<u8>;
 }
 
@@ -133,18 +136,19 @@ pub fn a_proof_of_another_issuer_is_refused(harness: &impl ProofHarness) {
 }
 
 /// A proof judged as long after it was made as the port takes one, or judged that long before, is
-/// refused.
+/// refused. Each judgement is of a proof made for it, since a port may take a proof once.
 pub fn a_proof_out_of_its_time_is_refused(harness: &impl ProofHarness) {
     let (challenge, _) = challenges();
-    let proof = harness.proof("alice", &challenge, MADE_MS, Made::Good);
     let port = harness.port();
+    let stale = harness.proof("alice", &challenge, MADE_MS, Made::Good);
     assert_eq!(
-        port.verify(&proof, &challenge, MADE_MS + harness.valid_ms()),
+        port.verify(&stale, &challenge, MADE_MS + harness.valid_ms()),
         Err(ProofRefused::Time),
         "no longer good"
     );
+    let early = harness.proof("alice", &challenge, MADE_MS, Made::Good);
     assert_eq!(
-        port.verify(&proof, &challenge, MADE_MS - harness.valid_ms()),
+        port.verify(&early, &challenge, MADE_MS - harness.valid_ms()),
         Err(ProofRefused::Time),
         "made later than it is judged"
     );
@@ -282,6 +286,10 @@ impl IdentityProof for TestProof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::collections::BTreeSet;
+    use alloc::sync::Arc;
+    use core::cell::Cell;
+    use std::sync::Mutex;
 
     const KEY: [u8; 32] = [7; 32];
     const ANOTHER_KEY: [u8; 32] = [8; 32];
@@ -325,6 +333,87 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// The proofs a port of [`Once`] judged, shared by every port of one harness.
+    type Judged = Arc<Mutex<BTreeSet<Vec<u8>>>>;
+
+    /// A port over [`TestProof`] that judges a proof once, as one that exchanges an OpenID Connect
+    /// authorization code does: the provider refuses a code exchanged before (RFC 6749, section
+    /// 4.1.2). A proof is the serial its harness issued it under, in eight bytes, before a proof of
+    /// [`TestProof`]; one that any port of the harness judged before is refused whatever it holds.
+    struct Once {
+        proofs: TestProof,
+        judged: Judged,
+    }
+
+    impl IdentityProof for Once {
+        fn verify(
+            &self,
+            proof: &[u8],
+            challenge: &Challenge,
+            now_ms: u64,
+        ) -> Result<Person, ProofRefused> {
+            if !self.judged.lock().expect("held").insert(proof.to_vec()) {
+                return Err(ProofRefused::Malformed);
+            }
+            let (_, made) = proof
+                .split_first_chunk::<8>()
+                .ok_or(ProofRefused::Malformed)?;
+            self.proofs.verify(made, challenge, now_ms)
+        }
+    }
+
+    /// The kit's harness over [`Once`]: each proof it makes is issued under a serial of its own.
+    struct OverOnce {
+        judged: Judged,
+        issued: Cell<u64>,
+    }
+
+    impl ProofHarness for OverOnce {
+        type Port = Once;
+
+        fn port(&self) -> Once {
+            Once {
+                proofs: OverTestProof.port(),
+                judged: Arc::clone(&self.judged),
+            }
+        }
+
+        fn issuer(&self) -> String {
+            OverTestProof.issuer()
+        }
+
+        fn valid_ms(&self) -> u64 {
+            OverTestProof.valid_ms()
+        }
+
+        fn proof(&self, subject: &str, challenge: &Challenge, made_ms: u64, made: Made) -> Vec<u8> {
+            let serial = self.issued.get();
+            self.issued.set(serial + 1);
+            let mut proof = serial.to_be_bytes().to_vec();
+            proof.extend(OverTestProof.proof(subject, challenge, made_ms, made));
+            proof
+        }
+    }
+
+    /// A port that judges each proof once, as an adapter that exchanges an authorization code
+    /// must, passes the whole kit, run against one harness: no function judges a proof twice. Red
+    /// if a function judges a proof it made once more, as one judged a proof out of its time at
+    /// both ends.
+    #[test]
+    fn a_port_that_takes_each_proof_once_passes_the_whole_kit() {
+        let harness = OverOnce {
+            judged: Arc::new(Mutex::new(BTreeSet::new())),
+            issued: Cell::new(0),
+        };
+        super::a_good_proof_names_its_person(&harness);
+        super::a_proof_of_another_challenge_is_refused(&harness);
+        super::a_proof_signed_by_another_key_is_refused(&harness);
+        super::a_proof_for_another_audience_is_refused(&harness);
+        super::a_proof_of_another_issuer_is_refused(&harness);
+        super::a_proof_out_of_its_time_is_refused(&harness);
+        super::bytes_that_are_no_proof_are_refused(&harness);
     }
 
     #[test]
