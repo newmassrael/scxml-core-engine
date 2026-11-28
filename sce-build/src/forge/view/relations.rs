@@ -5,8 +5,8 @@
 //! from relation tuples by Zanzibar's namespace rewrites, read as rules of
 //! Datalog.
 //!
-//! A tuple says `object_type:object#relation@subject`, its subject a principal
-//! (`subject_type:subject`) or a set of them (`subject_type:subject#subject_relation`).
+//! A tuple says `object_type:object_id#relation@subject`, its subject a principal
+//! (`subject_type:subject_id`) or a set of them (`subject_type:subject_id#subject_relation`).
 //! Its record declares the six fields by those names: the object's and the
 //! subject's identities of one type, never optional; `object_type`, `relation` and
 //! `subject_type` each a text or a value of an enum; and `subject_relation` a text,
@@ -35,10 +35,10 @@ use crate::forge::value_type::{TypeScope, ValueType};
 /// The fields of a relation tuple's record (D5).
 pub(super) const TUPLE_FIELDS: &[&str] = &[
     "object_type",
-    "object",
+    "object_id",
     "relation",
     "subject_type",
-    "subject",
+    "subject_id",
     "subject_relation",
 ];
 
@@ -259,11 +259,11 @@ fn tuple_shape_refusal(types: &TypeScope, alias: &str) -> Option<String> {
                 .to_string(),
         );
     }
-    let object = field("object")?;
-    let subject = field("subject")?;
+    let object = field("object_id")?;
+    let subject = field("subject_id")?;
     if object != subject || matches!(object, ValueType::Optional { .. }) {
         return Some(
-            "the fields object and subject of a relation tuple are of one type, never optional: \
+            "the fields object_id and subject_id of a relation tuple are of one type, never optional: \
              a set of principals is named by an object"
                 .to_string(),
         );

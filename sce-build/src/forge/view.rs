@@ -230,7 +230,7 @@ fn tuple_object_type(view: &ViewModel, types: &TypeScope) -> Option<ValueType> {
         .get(alias)?
         .fields
         .iter()
-        .find(|(name, _)| name == "object")
+        .find(|(name, _)| name == "object_id")
         .map(|(_, ty)| ty.clone())
 }
 

@@ -555,8 +555,8 @@ one `<sce:group by>` of `<sce:field>`, `<sce:count>`, `<sce:sum>`, `<sce:min>`,
 `<sce:computed relation>`, `<sce:through relation then>` and `<sce:all>` terms, less what
 one `<sce:but-not>` derives; `subjects` names the sets of principals
 (`object#relation`) a tuple's subject is expanded through. The document of relations
-reads one `set<record:Tuple>[B]` whose record declares `object_type`, `object`,
-`relation`, `subject_type`, `subject` and `subject_relation`, a text empty for a
+reads one `set<record:Tuple>[B]` whose record declares `object_type`, `object_id`,
+`relation`, `subject_type`, `subject_id` and `subject_relation`, a text empty for a
 principal. The parser
 refuses a shape the document breaks alone with the `validation/*` codes those shapes take
 everywhere. The build then reads the document, and every view it imports, into one

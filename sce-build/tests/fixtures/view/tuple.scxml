@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A relation tuple of docs/adr/0151, D5: object_type:object#relation@subject_type:subject, or of a set of subjects when subject_relation is not empty. -->
+<!-- A relation tuple of docs/adr/0151, D5: object_type:object_id#relation@subject_type:subject_id, or of a set of subjects when subject_relation is not empty. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
@@ -8,10 +8,10 @@
        sce:event-name="access.tuple">
   <datamodel>
     <data id="object_type" sce:type="string[16]" sce:direction="in"/>
-    <data id="object" sce:type="uint64" sce:direction="in"/>
+    <data id="object_id" sce:type="uint64" sce:direction="in"/>
     <data id="relation" sce:type="string[16]" sce:direction="in"/>
     <data id="subject_type" sce:type="string[16]" sce:direction="in"/>
-    <data id="subject" sce:type="uint64" sce:direction="in"/>
+    <data id="subject_id" sce:type="uint64" sce:direction="in"/>
     <data id="subject_relation" sce:type="string[16]" sce:direction="in"/>
   </datamodel>
 </scxml>
