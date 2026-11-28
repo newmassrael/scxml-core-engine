@@ -37,9 +37,17 @@
     # (UNMEASURED_COST_CEILING in gate_registry.py).
     "cost_s": 3,
     "summary": "a commit that changes a formal check changes nothing else, for a reason",
-    # The verdict is a function of the commits the ranges name, and their ids are
-    # in the unit's argv (`--change-set`), so a kept pass is the same commits'.
-    "cache": True,
+    # It reads git history, the commits of the ranges it is handed and their
+    # parents, which the registry's rule for `cache` names as not the tracked
+    # tree. A kept verdict would run its unit in a copy of the tree, which holds
+    # the tree's objects and no history: on 2026-11-28 it ended 2 there on every
+    # build machine but pc2 ("<base> is no commit this checkout has"), passed on
+    # its confirmation, and the queue returned item after item. A key that names
+    # the range's commits is also one no later landing repeats, so nothing is
+    # lost by running it where the history is.
+    "cache": False,
+    "no_cache_reason": "reads git history: the commits of the ranges it is handed "
+                       "and their parents, which a copy of the tree does not hold",
     "inputs": None,
     "commits": ["CHANGES"],
     "peak_gb": 1,
