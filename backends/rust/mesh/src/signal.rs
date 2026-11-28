@@ -91,7 +91,10 @@ pub enum Signal {
     /// `outcomeUnknown` (row 20): an instance of an open machine was
     /// fenced (docs/adr/0113, D4): its server answered an exchange made
     /// under the incarnation it held `412`, that incarnation having ended
-    /// with what the server kept of it. Raised on the dialing side once for
+    /// with what the server kept of it; or it was restored from a checkpoint
+    /// of its own, a recovery that ends the incarnation the checkpoint's
+    /// contents were said under, and every envelope the checkpoint held for
+    /// its server may have left. Raised on the dialing side once for
     /// the request `invoke_id` (the wire id, RFC 4122 text) that waited on
     /// the server, which is forgotten as row 5 forgets one, and once for
     /// each other envelope `envelope_id` (RFC 4122 text) the server had not

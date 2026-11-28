@@ -877,6 +877,21 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// row 17) for each peer source the endpoint holds state for whose binding
     /// is not durable. A refused restore leaves the endpoint in no state to
     /// use.
+    ///
+    /// `checkpoint` is the latest one the host's store holds durably, never an
+    /// earlier one: a read of stable storage returns the last write, and an
+    /// earlier checkpoint would take back marks and numbers the machine has
+    /// gone past.
+    ///
+    /// An instance of an open machine (docs/adr/0113, D4) is restored as a
+    /// recovery, which ends the incarnation of its membership that the
+    /// checkpoint's contents were said under: what the checkpoint held for its
+    /// server, a transmission waiting out its backoff among it, ends as a
+    /// fence ends it, as row 20, and none of it is sent again
+    /// ([`Router::speak_as_instance`] is called before the restore). Its link
+    /// is one that holds no incarnation, a client of the host's new start,
+    /// which joins anew, and nothing it tells reaches the endpoint before the
+    /// restore.
     pub fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), CheckpointError> {
         let clocks = self.clocks();
         let section = checkpoint
@@ -884,13 +899,19 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             .ok_or_else(|| CheckpointError::NoSection(self.router.machine().to_string()))?;
         let effects = self.router.restore(
             &section.router,
+            &section.retries,
             checkpoint.sequence,
             checkpoint.clean,
             clocks,
         )?;
+        // docs/adr/0113, D4: the restore of a router that speaks as an instance ended every
+        // transmission waiting out its backoff with the rest of what the checkpoint held, and
+        // makes none of it under the next incarnation.
+        let keeps_retries = self.router.instance().is_none();
         self.retries = section
             .retries
             .iter()
+            .filter(|_| keeps_retries)
             .map(|retry| Retry {
                 peer: retry.peer.clone(),
                 bytes: retry.envelope.clone(),

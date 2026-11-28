@@ -41,7 +41,10 @@
 //! What a checkpoint never holds: keys, credentials and trust state, which are the host's; a
 //! request this machine has in flight, which a restore interrupts (`docs/SCE_ACCEPTED_SUBSET.md`
 //! section 2.15), so no correlation is kept for it; and a causal route's state, which its copy's
-//! journal keeps (SCE_MESH.md section 10.12).
+//! journal keeps (SCE_MESH.md section 10.12). The checkpoint of an instance of an open machine
+//! names each request in flight by its wire `invoke_id` and nothing more, so that its restore,
+//! a recovery that ends the incarnation the checkpoint's contents were said under, ends each with
+//! an unknown outcome and carries none of it under the next (docs/adr/0113, D4).
 //!
 //! The document is JSON, `sce-mesh-checkpoint` format [`FORMAT`]
 //! (`schemas/sce-mesh-checkpoint.v1.schema.json`). Every 64-bit number is the text of its digits,
@@ -127,6 +130,11 @@ pub(crate) struct PeerState {
     pub unacked: Vec<UnackedState>,
     /// What a binding the peer sends to with durable receipt has admitted from it.
     pub received: Option<ReceivedState>,
+    /// The requests still waiting on the peer, by their wire `invoke_id`, in wire-id order:
+    /// named only by the checkpoint of an instance of an open machine, whose restore ends each
+    /// with an unknown outcome (docs/adr/0113, D4). Empty for every other router, and then not
+    /// written.
+    pub waiting: Vec<[u8; 16]>,
 }
 
 /// An envelope waiting for its link, with the moment it was admitted.
@@ -652,7 +660,7 @@ impl EndpointSection {
 
 impl PeerState {
     fn to_value(&self) -> Value {
-        object(alloc::vec![
+        let mut members = alloc::vec![
             ("peer", text(&self.peer)),
             ("nextseq", count(self.next_sequence)),
             (
@@ -696,7 +704,16 @@ impl PeerState {
                     ]),
                 },
             ),
-        ])
+        ];
+        // docs/adr/0113, D4: written only by an instance with a request waiting, so the
+        // checkpoint of every other router is what it was.
+        if !self.waiting.is_empty() {
+            members.push((
+                "waiting",
+                Value::Array(self.waiting.iter().map(|id| hex(id)).collect()),
+            ));
+        }
+        object(members)
     }
 
     fn from_value(value: &Value, at: &str) -> Result<Self, CheckpointError> {
@@ -743,6 +760,13 @@ impl PeerState {
             queued,
             unacked,
             received,
+            waiting: match value.member("waiting") {
+                None => Vec::new(),
+                Some(waiting) => as_items(waiting, &path("waiting"))?
+                    .iter()
+                    .map(|id| as_id(id, &path("waiting")))
+                    .collect::<Result<_, _>>()?,
+            },
         })
     }
 }
@@ -2180,6 +2204,7 @@ mod tests {
                             held: 2,
                             above: vec![4, 6],
                         }),
+                        waiting: vec![[5; 16]],
                     }],
                     senders: vec![
                         SenderState {
@@ -2272,6 +2297,94 @@ mod tests {
         };
         let text = checkpoint.to_json();
         assert_eq!(Checkpoint::from_json(&text), Ok(checkpoint));
+    }
+
+    /// docs/adr/0113, D4: the restore of an instance of an open machine is a recovery, and a
+    /// transmission to its server that waited out its backoff when the checkpoint was sealed may
+    /// have left: it ends as a fence ends it, as SCE_MESH.md section 16.7 row 20 with its
+    /// `envelope_id`, and is not made under the next incarnation. Red if the endpoint's restore
+    /// keeps the retry (it is then sent under the incarnation the client joins anew, where the
+    /// server takes it as new), or drops it untold.
+    #[test]
+    fn a_restored_instance_ends_the_retry_its_checkpoint_held_and_makes_none_of_it() {
+        let instance = |incarnation: u8| -> Host {
+            let mut router = Router::new("phone", 8, 50).unwrap();
+            router.speak_as_instance("a1").unwrap();
+            router.add_peer(
+                "cloud",
+                PeerConfig {
+                    retry: Some(crate::outbound::RetryPolicy {
+                        max_retries: 3,
+                        initial_backoff_ms: 100,
+                        backoff_multiplier: 2.0,
+                        max_backoff_ms: 300,
+                        jitter_pct: 0,
+                    }),
+                    ..config("cloud", &[])
+                },
+            );
+            router.enable_checkpoints();
+            Endpoint::new(
+                router,
+                Recorder::default(),
+                Fixed {
+                    now: 0,
+                    ids: 0,
+                    incarnation,
+                },
+            )
+        };
+        let mut phone = instance(0);
+        phone.peer_ready("cloud");
+        phone.send(&HostSendRequest {
+            processor_type: MESH_PROCESSOR_TYPE.to_string(),
+            event_name: "status.changed".to_string(),
+            target: "#cloud".to_string(),
+            event_data: "{}".to_string(),
+            ..HostSendRequest::default()
+        });
+        phone.checkpoint(1, saved(&[], Vec::new()), false).unwrap();
+        phone
+            .transport_mut()
+            .failures
+            .push_back(crate::endpoint::TransportFailure {
+                retryable: true,
+                message: Some("reset".to_string()),
+                queue_full: None,
+            });
+        phone.durable(1);
+        assert!(sent(&mut phone).is_empty(), "the transmission failed");
+        let checkpoint = phone.checkpoint(2, saved(&[], Vec::new()), false).unwrap();
+        assert_eq!(
+            checkpoint.endpoints[0].retries.len(),
+            1,
+            "the checkpoint holds the retry"
+        );
+        drop(phone);
+
+        let mut restored = instance(1);
+        restored.restore(&checkpoint).unwrap();
+        let rows = restored.take_calls();
+        let expected = format!(
+            r#"{{"errorName":"communication","reason":"outcomeUnknown","envelope_id":"{}","target":"cloud","transport":"wss"}}"#,
+            crate::rpc::uuid_text(&[1; 16])
+        );
+        assert!(
+            matches!(
+                rows.as_slice(),
+                [EngineCall::Raise(event)] if event.name == "error.communication"
+                    && event.metadata.data == expected
+            ),
+            "{rows:?}"
+        );
+        assert!(restored.is_quiet(), "no retry waits");
+        restored.peer_ready("cloud");
+        restored.environment_mut().now = 10_000;
+        restored.tick();
+        assert!(
+            sent(&mut restored).is_empty(),
+            "nothing is sent under the next incarnation"
+        );
     }
 
     /// The shared instance of the surface, which `sce-build` holds to the

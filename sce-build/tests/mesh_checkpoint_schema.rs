@@ -100,7 +100,7 @@ type Breakage = (&'static str, fn(&mut serde_json::Value));
 fn the_checkpoint_schema_rejects_what_the_core_does_not_write() {
     let checkpoint = checkpoint_schema();
     let (_, valid) = instances().remove(0);
-    let broken: [Breakage; 7] = [
+    let broken: [Breakage; 8] = [
         ("another format", |v| v["format"] = serde_json::json!(2)),
         ("a number as a JSON number", |v| {
             v["checkpoint"] = serde_json::json!(7)
@@ -122,6 +122,9 @@ fn the_checkpoint_schema_rejects_what_the_core_does_not_write() {
         }),
         ("a member no reader knows", |v| {
             v["endpoints"][0]["peers"][0]["routing"] = serde_json::json!("x")
+        }),
+        ("a waiting request named by no 16-byte id", |v| {
+            v["endpoints"][0]["peers"][0]["waiting"][0] = serde_json::json!("0505")
         }),
     ];
     for (what, breaks) in broken {
