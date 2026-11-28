@@ -13904,7 +13904,7 @@ fn design_members(
     let design = design_of(documents, with_imports);
     if with_imports {
         for named in documents {
-            if let Err(source) = fs::read_to_string(named) {
+            if let Err(source) = crate::confine::read_to_string(Path::new(named)) {
                 error_format.emit_and_exit(
                     &CliError::ReadInput {
                         path: named.clone(),
