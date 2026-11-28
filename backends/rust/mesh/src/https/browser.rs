@@ -604,8 +604,8 @@ mod tests {
     use super::*;
     use sce_rust_crypto::ed25519::KeyPair;
 
-    const ORIGIN: &str = "http://127.0.0.1:8080";
-    const TARGET: &str = "http://127.0.0.1:8080/sce-mesh/1/phone";
+    const ORIGIN: &str = "http://127.0.0.1:4100";
+    const TARGET: &str = "http://127.0.0.1:4100/sce-mesh/1/phone";
     const EPOCH: &str = "0123456789abcdef0123456789abcdef";
     /// 2027-01-15, in seconds and in milliseconds since the Unix epoch.
     const NOW_S: i64 = 1_800_000_000;
@@ -805,7 +805,7 @@ mod tests {
             |changes: Value| BrowserClient::start(&settings_with(changes), &[1u8; 32]).err();
         assert_eq!(refused(json!({})), None);
         assert_eq!(
-            refused(json!({ "base": "http://127.0.0.1:8080/api/" })),
+            refused(json!({ "base": "http://127.0.0.1:4100/api/" })),
             None
         );
         assert_eq!(
