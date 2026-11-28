@@ -1784,19 +1784,23 @@
       "runs": [
         {
           "config": "Subscriptions.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 7115
         },
         {
           "config": "Subscriptions_faults.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 5670
         },
         {
           "config": "Subscriptions_two_values.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 2883
         },
         {
           "config": "Subscriptions_live.cfg",
-          "expect": "holds"
+          "expect": "holds",
+          "states": 916
         },
         {
           "config": "Subscriptions_live_without_fairness.cfg",
