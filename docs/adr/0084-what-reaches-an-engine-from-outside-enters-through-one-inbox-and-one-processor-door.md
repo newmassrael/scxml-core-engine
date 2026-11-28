@@ -40,6 +40,10 @@
   documents of `a_delayed_http_send_is_posted_when_due` name `127.0.0.1:18081`, which the C11 channel's listener
   binds.
 - Date: 2026-11-03
+- Amended by: ADR 0086 section 16 (2026-11-28, accepted 2026-11-29), D2: every lane's inbox has a capacity,
+  `machines.<m>.inbox.capacity`, a declared large bound over grown storage on an `ap` machine, and a post past it is
+  refused as `full` (ADR 0147 D1); the hosted lanes' inbox is served by the locked ring until an LSCQ held to the
+  capacity is promoted (section 16.7).
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
 - Amends:

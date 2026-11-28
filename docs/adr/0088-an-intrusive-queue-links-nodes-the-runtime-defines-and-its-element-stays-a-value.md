@@ -5,9 +5,10 @@
   The question came up in ADR 0081 step 4: a printed C++ codec value is made only by its constructor, and the
   intrusive queue wrote a field of its element in place.
 - Date: 2026-11-05
-- Amended by: ADR 0086 section 16 (2026-11-28): `<sce:intrusive>` takes `capacity`, the most nodes the caller's
-  array may hold, and the list refuses a longer array where it is made; its push still cannot fail (section 16.4,
-  item 5).
+- Amended by: ADR 0086 section 16 (2026-11-28, accepted 2026-11-29): `<sce:intrusive>` takes `capacity`, the most
+  elements the queue may hold, so the caller's array holds at most `capacity + 1` nodes, the stub among them; the
+  constructor answers a longer array with a refusal (Rust's `new` returns a `Result`), which amends section 1's
+  signatures, and "takes no attribute" is amended to this one; its push still cannot fail (section 16.5, item 7).
 - Amends:
   - SCE Protocol-Synthesis RFC §synth-5-P, the `intrusive` storage mode: "each element carries its own link field"
     stops being true. The queue links nodes of a type its runtime defines, and the element is the value a node holds.

@@ -3344,6 +3344,8 @@ The request, from the owner, was a kind for queues that hand elements between ex
 
 Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission. Extending `bounded-collection` was rejected because its invariants (a slot table addressed by handles, with insert/remove/get) are not a FIFO's, and serving both would need the bolt-on validator that marks a category error. Keeping the queue inside `worker` was rejected because the tree already carried four queue implementations with four contracts (two worker templates, `EventQueueBridge`, `ShmChannel`), and none could be named by a document. Its first consumer is its own verification suite (owner decision, 2026-09-30); `worker` and SCE Mesh migrate onto it afterwards.
 
+*Amended 2026-11-29 by ADR 0086 section 16, accepted under the owner's delegation of that day.* No collection is unbounded. The `unbounded` queue this admission names reads "grown to a declared bound": every queue states its `capacity`, `<sce:segmented>` is withdrawn, and whether its slots are fixed or grown as it fills is the deployment's (`machines.<m>.queues.<queue>.storage`). An intrusive queue states its capacity too. The admission's three axes are unchanged.
+
 ### Application: 2026-10-28 `broadcast-log` (a bounded log read by cursors its readers own)
 
 The request, from a downstream consumer, was an overflow policy for the `queue` kind (`sce:on-full="overwrite-oldest"`) and a way to read how many entries were overwritten. The design is ADR 0062, and its place in the Protocol-Synthesis RFC is §synth-5-S.
