@@ -3,6 +3,11 @@
 - Status: Accepted (2026-11-29) under the owner's standing rule, by the main session the owner delegated the decision
   to, after an independent review; amended on acceptance as listed in "Amended on acceptance".
 - Landed: nothing. No step of "Order of work" is built, and no proof, model or test of it has been run.
+- Amended by: ADR 0156 D17 (2026-11-29): what D9 and step 7 wait for, "a translation of the `sce-static` data model
+  into the generated model, and the module of a map", is ADR 0156 D17, its order steps 2a to 2c, and
+  `docs/formal/Map.tla`; "neither is a step of any record yet" no longer holds. `docs/formal/Compare.tla` is built by
+  whichever of D17's step 2a and this record's step 2 lands first, the other citing it, and step 7 comes after D17's
+  step 2c.
 - Date: 2026-11-28 (proposed); 2026-11-29 (accepted).
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a facility is built on the backends a consumer needs, Rust by

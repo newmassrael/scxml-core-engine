@@ -3,6 +3,10 @@
 - Status: Accepted (2026-11-29) under the owner's standing rule, by the main session the owner delegated the decision
   to, after an independent review; amended on acceptance as listed in "Amended on acceptance".
 - Built: nothing. No step of "Order of work" is built, and no proof, model or test of it has been run.
+- Amended by: ADR 0156 D17 (2026-11-29): D13's model depends on ADR 0156 D17 (its order steps 2a to 2c), which
+  translates the `sce-static` data model; `Construct::Decimal` is the arm D17's refusal table names, and step 9 lifts
+  it after step 2c. A decimal's coefficient is an integer of D17, so one past TLC's integers is TLC's cut
+  `integer-range`, judged whole by Apalache, in place of the refusal by name this record wrote for it.
 - Date: 2026-11-28 (proposed); 2026-11-29 (accepted).
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a facility is built on the backends a consumer needs, Rust by

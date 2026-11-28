@@ -8,10 +8,13 @@
   the one crate the theorem is proved of, and the order of work puts the theorems and the model before the operators
   ("Amended on acceptance", 12 to 15).
 - Landed: nothing. No step of "Order of work" is built, and no model or test of it has been run.
-- Amended 2026-11-29 (ADR 0156 D17): D7's model per document, the `<sce:noninterference>` statements judged on its
-  self-composition, and step 4 of "Order of work" rest on the translation of the `sce-static` data model, which ADR
-  0156 D17 decides and its order steps 2a to 2c schedule; no step scheduled it before. Step 4 comes after them, and
-  `docs/formal/Compare.tla`, D2's comparison in TLA+, is one of D17's modules.
+- Amended 2026-11-29 (ADR 0156 D17, accepted with its review's amendments): D7's model per document, the
+  `<sce:noninterference>` statements judged on its self-composition, and step 4 of "Order of work" rest on the
+  translation of the `sce-static` data model, which ADR 0156 D17 decides and its order steps 2a to 2c schedule; no step
+  scheduled it before. Step 4 comes after them. `docs/formal/Compare.tla`, D2's comparison in TLA+, is one of D17's
+  modules, of every type D17 translates: a binary real is refused by name there (`Construct::Real`), so D2's
+  totalOrder of a floating number has no model yet; and `docs/formal/Map.tla`'s `AsSet` reads a table as the set of
+  its rows, as D2 does.
 - Date: 2026-11-27 (proposed); 2026-11-28 (accepted).
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,

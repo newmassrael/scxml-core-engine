@@ -6,6 +6,10 @@
   use for the C11 arena is not approved by this acceptance: it waits for the owner's own words (D12).
 - Landed: step 1 of "Order of work" (this record, accepted, and the application of D1 in `SCE_FORGE.md` §10). No other
   step is built, and no proof, model or test of it has been run.
+- Amended by: ADR 0156 D17 (2026-11-29): the typed values of `sce-static` are translated by ADR 0156 D17 (its order
+  steps 2a to 2c), the step 5b waits for; 5b comes after 2c and lifts `Construct::Inductive`, which D17's refusal table
+  names. `Inductive.tla` is read by both checkers as D17's modules are: its folds over `Apalache.tla`, its types
+  annotated, and its `RECURSIVE` reference kept to a configuration TLC alone runs.
 - Date: 2026-11-28 (proposed); 2026-11-29 (accepted).
 - Written under the owner's standing rule (the most long-term correct structure, textbook in its foundations, cost
   ignored) and the owner's scope rule of 2026-11-22: a new facility is built only on the backends a consumer needs,

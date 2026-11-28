@@ -6,6 +6,10 @@
   ordered it written on 2026-11-23, relayed by a session of a downstream consumer. It comes after ADR 0118, ordered
   the same day. It is written under the owner's standing rule: the most long-term correct structure, textbook in
   its foundations, cost ignored.
+- Amended by: ADR 0156 D17 (2026-11-29): D2's second encoding holds a bounded integer, a boolean and an enum, and
+  refuses any other kind of value, and a `uint64`, for JANI by name; it prints a quotient truncated toward zero and a
+  remainder of the dividend's sign explicitly; it carries TLC's `integer-range` cut as a guard on each edge, so D4.1's
+  graphs stay equal; and D4.2 replays the runs of ADR 0115 D8 with their data.
 - Date: 2026-11-23
 - Amends ADR 0115 once accepted (its owner adds the "Amended by: ADR 0119" line then):
   - "The levels" gains a level of quantity (D1);

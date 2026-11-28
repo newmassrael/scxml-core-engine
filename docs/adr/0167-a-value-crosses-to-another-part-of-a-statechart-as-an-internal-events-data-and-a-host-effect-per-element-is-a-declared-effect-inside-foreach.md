@@ -11,6 +11,10 @@
   carries it to the recommendation's rule (D1), gives a statechart the declaration that makes "never by reading
   another's state" a fact the build holds (D2), and adds the second (D3, D4).
 - Landed: nothing. No step of "Order of work" is built, and no model or test of it has been run.
+- Amended by: ADR 0156 D17 (2026-11-29): the step D7 adds to ADR 0156 D3, which has the model read a `sce-static`
+  document, is ADR 0156 D17 with its order steps 2a to 2c, and step 6 comes after 2c. D7's readings are D17's, but for
+  their form: an event on either queue is `Variant(name, data)`, `<raise>`'s data `UNIT` and not the empty record, and
+  a host call `Variant(action, args)`, so Apalache can type them.
 - Date: 2026-11-28 (proposed); 2026-11-29 (accepted).
 - Amends (each amended document gains an "Amended by: ADR 0167" line in the landing that moves it):
   - `docs/SCE_ACCEPTED_SUBSET.md` §2.11, "v1 acceptance contract": the placement rule holds under every data model
