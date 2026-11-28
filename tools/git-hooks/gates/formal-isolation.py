@@ -23,8 +23,8 @@
     # file docs/formal/proofs.json declares proved, so those select it; a commit
     # that changes neither changes no check. The self-test holds every proved file
     # the manifest declares to these globs (`formal-isolation-sees-every-proved-file`).
-    # The judge and the gate scripts that run the formal judges are what it calls
-    # a judge, which a commit may not change beside a check.
+    # The judge's own source selects it too; a commit may change a judge beside a
+    # check no more than any other file.
     "extra": ["docs/formal/**", "sce-build/src/formal/**",
               "backends/rust/mesh/src/https/**", "backends/rust/mesh/src/outbound.rs",
               "backends/rust/mesh/src/outbound/**", "backends/rust/runtime/src/inbox.rs",

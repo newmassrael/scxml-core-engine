@@ -26,6 +26,12 @@
 //! judges, or any other file. It names its reason in a bullet of its message that
 //! begins `- Spec: `.
 //!
+//! The judges are among those other files, and are named by no path of their
+//! own: the judge is the command a consumer runs over its own commits
+//! (docs/adr/0146), and where a repository keeps the scripts and the workflows
+//! that run it is that repository's. Nothing but documents may come beside a
+//! check, so a judge changed beside one is refused as any file is.
+//!
 //! Judged commit by commit over the ranges it is given, and only where the
 //! commit's parent declares a check (holds the models or the proofs manifest): a
 //! rule judges what comes after it. A merge is judged by the commits it brings,
@@ -96,15 +102,6 @@ static NAME: LazyLock<Regex> =
 
 /// Any run of space.
 static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("the space's pattern"));
-
-/// The judges of this repository's checks: changing one beside a check changes
-/// how the check is judged.
-static JUDGE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^(sce-build/src/formal/|scripts/gates/formal-|tools/git-hooks/gates/formal-|\.github/workflows/formal-|tools/git-hooks/pre-push)",
-    )
-    .expect("the judges' pattern")
-});
 
 /// The manifests a repository declares its checks in, by their paths in the
 /// repository.
@@ -759,8 +756,6 @@ fn judged_commit(
             if code != new_code {
                 beside.push(format!("{path}: its code"));
             }
-        } else if JUDGE.is_match(&path) {
-            beside.push(format!("{path}: a judge"));
         } else if !(path.starts_with("docs/") && path.ends_with(".md")) {
             beside.push(path);
         }
@@ -1018,7 +1013,9 @@ mod tests {
         f.commit("chore: judge");
         f.swap("docs/formal/M.tla", "x < 9", "x < 11");
         f.swap("sce-build/src/formal/models.rs", "pass", "pass  // all");
-        assert!(f.judged(REASONED).contains("a judge"));
+        assert!(f
+            .judged(REASONED)
+            .contains("sce-build/src/formal/models.rs"));
     }
 
     #[test]
@@ -1243,7 +1240,7 @@ mod tests {
         let f = Fixture::new();
         f.remove(JUDGE_FILE);
         f.swap("docs/formal/M.tla", "x < 3", "x < 9");
-        assert!(f.judged(REASONED).contains("a judge"));
+        assert!(f.judged(REASONED).contains(JUDGE_FILE));
     }
 
     #[test]
