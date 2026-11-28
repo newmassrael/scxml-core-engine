@@ -1332,11 +1332,17 @@
         "BoundFollowed": "TRUE",
         "FollowInOrder": "TRUE",
         "FollowSameSlot": "TRUE",
-        "TellHoldsTable": "TRUE"
+        "TellHoldsTable": "TRUE",
+        "PastWaiting": "TRUE",
+        "ReadWindow": "TRUE",
+        "SkipWaiting": "TRUE",
+        "DrainTakeable": "TRUE",
+        "AnswerUnloaded": "TRUE"
       },
       "progress": [
         "Settled",
-        "FollowedSettled"
+        "FollowedSettled",
+        "StopEnds"
       ],
       "runs": [
         {
@@ -1393,13 +1399,15 @@
         },
         {
           "config": "SessionPool_followed.cfg",
-          "expect": "holds",
-          "states": 63379
+          "expect": "holds"
+        },
+        {
+          "config": "SessionPool_followed_window.cfg",
+          "expect": "holds"
         },
         {
           "config": "SessionPool_followed_live.cfg",
-          "expect": "holds",
-          "states": 63379
+          "expect": "holds"
         },
         {
           "config": "SessionPool_followed_live_without_fairness.cfg",
@@ -1436,6 +1444,42 @@
           "expect": "violates",
           "invariant": "StoppedFollowed",
           "without": "StopHoldsTable"
+        },
+        {
+          "config": "SessionPool_followed_live_stop_without_fairness.cfg",
+          "expect": "violates",
+          "property": "StopEnds",
+          "against": "the fairness of LiveSpec"
+        },
+        {
+          "config": "SessionPool_followed_without_past_waiting.cfg",
+          "expect": "violates",
+          "property": "Settled",
+          "without": "PastWaiting"
+        },
+        {
+          "config": "SessionPool_followed_without_window.cfg",
+          "expect": "violates",
+          "invariant": "PastBounded",
+          "without": "ReadWindow"
+        },
+        {
+          "config": "SessionPool_followed_without_skip.cfg",
+          "expect": "violates",
+          "invariant": "AppliedAfterRead",
+          "without": "SkipWaiting"
+        },
+        {
+          "config": "SessionPool_followed_without_drain_takeable.cfg",
+          "expect": "violates",
+          "property": "StopEnds",
+          "without": "DrainTakeable"
+        },
+        {
+          "config": "SessionPool_followed_without_answer_unloaded.cfg",
+          "expect": "violates",
+          "invariant": "StoppedClean",
+          "without": "AnswerUnloaded"
         }
       ]
     },

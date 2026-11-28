@@ -24,22 +24,35 @@
 (* session in memory.                                                      *)
 (*                                                                         *)
 (* The pool follows a journal (docs/adr/0114, D4; Pool::follow). Its       *)
-(* follower hands each entry to the session of its key with the table      *)
-(* held, as a post is made (Pool::post_followed): an entry waits in the    *)
-(* inbox and counts toward max_inbox as an envelope does                   *)
-(* (Input::waits_as_an_envelope). It hands the entries of a key in the     *)
-(* order of their positions: an entry that meets a bound, or that was lost *)
-(* when its slot left the table with it, holds every later entry of its    *)
-(* key, and a later entry follows an earlier one that is out only into the *)
-(* slot the table holds for the key now. The follower reads what became of *)
-(* an entry it handed at the start of a call, so an entry its slot lost is *)
-(* out in that slot until it reads it. A session takes in an entry above   *)
-(* the position it took in of the entry's key, and drops one at or below   *)
-(* it as a repeat.                                                         *)
+(* reader reads the entries in the order of their positions, holding at    *)
+(* most a window of them read and not yet taken in (FOLLOW_WINDOW), and    *)
+(* hands each to the session of its key with the table held, as a post is  *)
+(* made (Pool::post_followed): an entry waits in the inbox and counts      *)
+(* toward max_inbox as an envelope does (Input::waits_as_an_envelope). It  *)
+(* hands the entries of a key in the order of their positions: an entry    *)
+(* that meets a bound, or that was lost when its slot left the table with  *)
+(* it, holds every later entry of its key, and a later entry follows an    *)
+(* earlier one that is out only into the slot the table holds for the key  *)
+(* now. The reader reads what became of an entry it handed at the start of *)
+(* a call, so an entry its slot lost is out in that slot until it reads    *)
+(* it, and then keeps its mark: the position through which every entry it  *)
+(* read was taken in. A session takes in an entry above the position it    *)
+(* took in of the entry's key, and drops one at or below it as a repeat.   *)
+(*                                                                         *)
+(* An envelope may carry a position of the journal (docs/adr/0116, D5): it *)
+(* waits in its inbox until the reader's mark has passed the position, and *)
+(* so does every envelope behind it, while every other input, an entry     *)
+(* among them, is taken past them (Inbox::take). An entry that meets the   *)
+(* bound of an inbox in which such an envelope waits is put in past the    *)
+(* bound, counted by none (Pool::post_past_waiting), since the mark that   *)
+(* envelope waits for may wait for it; the window bounds how many are put  *)
+(* in so. A stop drains what the sessions can take, and answers what waits *)
+(* in the inbox of a session it never loaded.                              *)
 (*                                                                         *)
 (* A tell (Pool::tell_holders; Pool::end_members tells EndMember the same  *)
 (* way) puts an input the pool makes in the inbox of each session the      *)
-(* table holds, with the table held, and no bound counts it.               *)
+(* table holds, with the table held, unless the pool stops, and no bound   *)
+(* counts it.                                                              *)
 (*                                                                         *)
 (* The parts, each a constant that is TRUE in the protocol, and each taken *)
 (* out by a run that must find what it breaks:                             *)
@@ -61,6 +74,15 @@
 (*                   held                                                  *)
 (*   TellHoldsTable  a tell holds the table from the lookup of the slots   *)
 (*                   to the write into their inboxes                       *)
+(*   PastWaiting     an entry that meets the bound is put in past it only  *)
+(*                   where an envelope waits for the reader                *)
+(*   ReadWindow      the reader reads an entry only while it holds fewer   *)
+(*                   than the window read and not yet taken in             *)
+(*   SkipWaiting     a runner passes an envelope that waits for the reader *)
+(*                   and every envelope behind it                          *)
+(*   DrainTakeable   the stop waits only for what the sessions can take    *)
+(*   AnswerUnloaded  the stop answers what waits in the inbox of a session *)
+(*                   it never loaded                                       *)
 (*                                                                         *)
 (* lin, applied and took are history variables: the order each key's       *)
 (* envelopes were taken in, the order they were applied in, and the        *)
@@ -74,20 +96,22 @@
 (* the other inputs the pool makes (a link's readiness, a tick, a note),   *)
 (* each put in an inbox under the table as a tell is; the eviction a post  *)
 (* or a hand-out makes room by, which is the evictor's on the posting      *)
-(* thread; of the follower, its page, its window and the mark it keeps in  *)
-(* the store, which are EventJournal's (Follow with CursorAtomic), an      *)
-(* entry of a key another process holds, which is that process's to hand,  *)
-(* and an entry that names no session; a durable checkpoint apart from the *)
-(* save of an eviction or a stop, so the receipt of an entry is settled    *)
-(* when its session applies it; and the stop as a tell reads it, apart     *)
-(* from the table: a tell is put whatever the stop, as one that read it    *)
-(* just before it was set is.                                              *)
+(* thread; of the reader, its page, the store its mark is kept in, which   *)
+(* is EventJournal's (Follow with CursorAtomic), an entry of a key another *)
+(* process holds, which is that process's to hand, and an entry that names *)
+(* no session; a position above the journal's horizon, which is refused    *)
+(* where it is received, so an envelope carries one at or below the last   *)
+(* entry; and a durable checkpoint apart from the save of an eviction or a *)
+(* stop, so the receipt of an entry is settled when its session applies    *)
+(* it.                                                                     *)
 (*                                                                         *)
 (* Taken as given: a mutex is mutual exclusion; what a thread does with a  *)
 (* lock held is one step; an inbox's queue and its door move together     *)
 (* (pool/slot.rs); the stop flag is read and written sequentially          *)
 (* consistently (an atomic of Ordering::SeqCst, and under the table only   *)
-(* its holders decide by it).                                              *)
+(* its holders decide by it), and so is the reader's mark                  *)
+(* (Pool::read_mark), which only rises, so a thread that read it below its *)
+(* value now decides as it would have earlier.                             *)
 (***************************************************************************)
 EXTENDS Sequences, Naturals, FiniteSets
 
@@ -122,6 +146,14 @@ CONSTANTS
     \* the tells, each one call that tells the sessions the table holds
     \* @type: Set(Str);
     Tells,
+    \* the envelopes that carry a position of the journal, and the position each carries
+    \* @type: Set(Str);
+    Carriers,
+    \* @type: Int;
+    After,
+    \* the most entries the reader holds read and not yet taken in (FOLLOW_WINDOW)
+    \* @type: Int;
+    Window,
     \* the parts
     \* @type: Bool;
     PostHoldsTable,
@@ -142,7 +174,17 @@ CONSTANTS
     \* @type: Bool;
     FollowSameSlot,
     \* @type: Bool;
-    TellHoldsTable
+    TellHoldsTable,
+    \* @type: Bool;
+    PastWaiting,
+    \* @type: Bool;
+    ReadWindow,
+    \* @type: Bool;
+    SkipWaiting,
+    \* @type: Bool;
+    DrainTakeable,
+    \* @type: Bool;
+    AnswerUnloaded
 
 Keys == {First, Second}
 Envelopes == FirstEnvelopes \cup SecondEnvelopes
@@ -163,14 +205,9 @@ PositionOf(e) == CHOOSE i \in DOMAIN Journal : Journal[i] = e
 \* @type: (Str) => Set(Str);
 EarlierOf(e) == {d \in Entries : KeyOf(d) = KeyOf(e) /\ PositionOf(d) < PositionOf(e)}
 
-\* Whether the input x counts toward max_inbox (Input::waits_as_an_envelope): an envelope does,
-\* and an entry with BoundFollowed. A tell never does.
-\* @type: (Str) => Bool;
-WaitsAsAnEnvelope(x) == x \in Envelopes \/ (BoundFollowed /\ x \in Entries)
-
-\* How many inputs of the inbox q count toward max_inbox (the envelopes of its Door).
-\* @type: (Seq(Str)) => Int;
-Waiting(q) == Cardinality({i \in DOMAIN q : WaitsAsAnEnvelope(q[i])})
+\* The smallest of a set of positions.
+\* @type: (Set(Int)) => Int;
+Least(S) == CHOOSE p \in S : \A q \in S : p <= q
 
 \* The journals the configurations give Journal: none, and two entries.
 \* @type: () => Seq(Str);
@@ -239,6 +276,15 @@ VARIABLES
     \* the position of the last entry each key's session took in, which its checkpoint keeps
     \* @type: Str -> Int;
     mark,
+    \* the position of the last entry the reader read
+    \* @type: Int;
+    read,
+    \* the reader's mark as it was last kept: every entry at or below it was taken in
+    \* @type: Int;
+    readMark,
+    \* whether each entry was put in past the bound of its inbox, which counts it then by none
+    \* @type: Str -> Bool;
+    past,
     \* where each tell stands: none; looked, its slots looked up and the table let go; or told
     \* @type: Str -> Str;
     told,
@@ -254,11 +300,11 @@ VARIABLES
     took
 
 vars == <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput, evicting,
-          status, target, stopping, stage, handed, handedTo, follower, mark, told, tellTo, lin,
-          applied, took>>
+          status, target, stopping, stage, handed, handedTo, follower, mark, read, readMark, past,
+          told, tellTo, lin, applied, took>>
 
 \* What the follower and the tells move.
-followVars == <<handed, handedTo, follower, mark, took>>
+followVars == <<handed, handedTo, follower, mark, read, readMark, past, took>>
 tellVars == <<told, tellTo>>
 
 \* @type: (Str, Seq(Str)) => Bool;
@@ -280,6 +326,49 @@ Held == {k \in Keys : table[k] # 0}
 \* would read inbox[0] in one.
 HeldSlots == {table[k] : k \in Held}
 
+\* Whether the input x is counted by the bound of the inbox it is in: an envelope is, and an entry
+\* unless it was put in past the bound. A tell never is.
+\* @type: (Str) => Bool;
+Counted(x) == x \in Envelopes \/ (x \in Entries /\ ~past[x])
+
+\* Whether the input x counts toward max_inbox (Input::waits_as_an_envelope): what is counted, an
+\* entry only with BoundFollowed.
+\* @type: (Str) => Bool;
+WaitsAsAnEnvelope(x) == Counted(x) /\ (BoundFollowed \/ x \notin Entries)
+
+\* How many inputs of the inbox q count toward max_inbox (the bounded count of its Door).
+\* @type: (Seq(Str)) => Int;
+Waiting(q) == Cardinality({i \in DOMAIN q : WaitsAsAnEnvelope(q[i])})
+
+\* Whether the input x is an envelope that waits for the reader's mark to pass its position
+\* (Input::waits_on_reader). One whose position the mark had passed when it was posted carries
+\* none, which is the same, since the mark only rises.
+\* @type: (Str) => Bool;
+WaitsOnReader(x) == x \in Carriers /\ After > readMark
+
+\* Whether a runner may take the i-th input of q: with SkipWaiting, one that is no envelope, or an
+\* envelope no envelope at or before it waits for the reader (Inbox::takeable).
+\* @type: (Seq(Str), Int) => Bool;
+MayTake(q, i) ==
+    \/ ~SkipWaiting
+    \/ q[i] \notin Envelopes
+    \/ \A j \in 1..i : q[j] \in Envelopes => ~WaitsOnReader(q[j])
+
+\* Where the oldest input a runner may take is in q, 0 for none.
+\* @type: (Seq(Str)) => Int;
+TakeableAt(q) ==
+    LET at == {i \in DOMAIN q : MayTake(q, i)} IN
+    IF at = {} THEN 0 ELSE Least(at)
+
+\* q without its i-th input.
+\* @type: (Seq(Str), Int) => Seq(Str);
+Without(q, i) == SubSeq(q, 1, i - 1) \o SubSeq(q, i + 1, Len(q))
+
+\* The entries the reader read and has not read taken in, and the position through which every
+\* entry it read was taken in, which it keeps as its mark (Reader::mark).
+Open == {e \in Entries : PositionOf(e) <= read /\ handed[e] # "in"}
+ReadThrough == IF Open = {} THEN read ELSE Least({PositionOf(e) : e \in Open}) - 1
+
 Init ==
     /\ table = [k \in Keys |-> 0]
     /\ made = 0
@@ -300,6 +389,9 @@ Init ==
     /\ handedTo = [e \in Entries |-> 0]
     /\ follower = "idle"
     /\ mark = [k \in Keys |-> 0]
+    /\ read = 0
+    /\ readMark = 0
+    /\ past = [e \in Entries |-> FALSE]
     /\ told = [x \in Tells |-> "none"]
     /\ tellTo = [x \in Tells |-> {}]
     /\ lin = [k \in Keys |-> <<>>]
@@ -399,12 +491,14 @@ Abandon(s) ==
                       ELSE status[e]]
     /\ inbox' = [inbox EXCEPT ![s] = <<>>]
 
-\* The host runs the key k a post named: the runner reads its slot from the table.
+\* The host runs the key k a post named: the runner reads its slot from the table. A session in
+\* memory is run for an input it may take; one out of memory, for any.
 \* @type: (Str, Str) => Bool;
 Get(r, k) ==
     /\ rpc[r] = "idle"
     /\ table[k] # 0
     /\ inbox[table[k]] # <<>>
+    /\ ~loaded[table[k]] \/ TakeableAt(inbox[table[k]]) # 0
     /\ rpc' = [rpc EXCEPT ![r] = "got"]
     /\ rslot' = [rslot EXCEPT ![r] = table[k]]
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rinput, evicting, status,
@@ -465,15 +559,17 @@ Refused(r) ==
     /\ UNCHANGED <<made, slotKey, loaded, rinput, evicting, target, stopping, stage, lin, applied>>
     /\ UNCHANGED <<followVars, tellVars>>
 
-\* The runner takes the oldest input of the inbox (Pool::serve).
+\* The runner takes the oldest input of the inbox it may take (Pool::serve, Inbox::take).
 \* @type: (Str) => Bool;
 Take(r) ==
-    LET s == rslot[r] IN
+    LET s == rslot[r]
+        i == TakeableAt(inbox[s])
+    IN
     /\ rpc[r] = "holds"
     /\ loaded[s]
-    /\ inbox[s] # <<>>
-    /\ rinput' = [rinput EXCEPT ![r] = Head(inbox[s])]
-    /\ inbox' = [inbox EXCEPT ![s] = Tail(@)]
+    /\ i # 0
+    /\ rinput' = [rinput EXCEPT ![r] = inbox[s][i]]
+    /\ inbox' = [inbox EXCEPT ![s] = Without(@, i)]
     /\ rpc' = [rpc EXCEPT ![r] = "applying"]
     /\ UNCHANGED <<table, made, slotKey, closed, loaded, holders, rslot, evicting, status, target,
                    stopping, stage, lin, applied>>
@@ -507,15 +603,16 @@ Apply(r) ==
     /\ rpc' = [rpc EXCEPT ![r] = "holds"]
     /\ rinput' = [rinput EXCEPT ![r] = ""]
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rslot, evicting, target,
-                   stopping, stage, lin, handed, handedTo, follower, tellVars>>
+                   stopping, stage, lin, handed, handedTo, follower, read, readMark, past,
+                   tellVars>>
 
-\* The inbox holds nothing more, and the machine waits (Served::Waiting).
+\* The inbox holds nothing more the runner may take, and the machine waits (Served::Waiting).
 \* @type: (Str) => Bool;
 Wait(r) ==
     LET s == rslot[r] IN
     /\ rpc[r] = "holds"
     /\ loaded[s]
-    /\ inbox[s] = <<>>
+    /\ TakeableAt(inbox[s]) = 0
     /\ Release(r)
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, rinput, evicting, status, target,
                    stopping, stage, lin, applied>>
@@ -577,10 +674,11 @@ Stop ==
                    evicting, status, target, lin, applied>>
     /\ UNCHANGED <<followVars, tellVars>>
 
-\* Every inbox the table holds is drained.
+\* Every inbox the table holds is drained of what its session may take; with DrainTakeable, an
+\* envelope that waits for the reader, which a stopping pool no longer runs, is not waited for.
 Drained ==
     /\ stage = "draining"
-    /\ \A s \in HeldSlots : inbox[s] = <<>>
+    /\ \A s \in HeldSlots : IF DrainTakeable THEN TakeableAt(inbox[s]) = 0 ELSE inbox[s] = <<>>
     /\ stage' = "saving"
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
                    evicting, status, target, stopping, lin, applied>>
@@ -602,10 +700,27 @@ Save(s) ==
                    lin, applied>>
     /\ UNCHANGED <<followVars, tellVars>>
 
-\* No session the table holds is in memory: the stop has ended.
+\* With AnswerUnloaded, a session never loaded whose inbox still holds something, envelopes that
+\* wait for the reader, leaves the table, and what its inbox holds is answered.
+\* @type: (Int) => Bool;
+Answer(s) ==
+    /\ AnswerUnloaded
+    /\ stage = "saving"
+    /\ s <= made
+    /\ InTable(s)
+    /\ ~loaded[s]
+    /\ holders[s] = {}
+    /\ inbox[s] # <<>>
+    /\ Abandon(s)
+    /\ UNCHANGED <<made, slotKey, loaded, holders, rpc, rslot, rinput, evicting, target, stopping,
+                   stage, lin, applied>>
+    /\ UNCHANGED <<followVars, tellVars>>
+
+\* No session the table holds is in memory, and with AnswerUnloaded none holds anything: the stop
+\* has ended.
 Stopped ==
     /\ stage = "saving"
-    /\ \A s \in HeldSlots : ~loaded[s]
+    /\ \A s \in HeldSlots : ~loaded[s] /\ (AnswerUnloaded => inbox[s] = <<>>)
     /\ stage' = "stopped"
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
                    evicting, status, target, stopping, lin, applied>>
@@ -622,22 +737,24 @@ FollowerReadsStop ==
     /\ ~stopping
     /\ follower' = "checked"
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
-                   evicting, status, target, stopping, stage, handed, handedTo, mark, tellVars,
-                   lin, applied, took>>
+                   evicting, status, target, stopping, stage, handed, handedTo, mark, read,
+                   readMark, past, tellVars, lin, applied, took>>
 
-\* The entry e is handed to the session of its key, with the table held (Pool::post_followed, which
-\* admits it as slot::admission admits an envelope): the stop, then the inbox of the session the
-\* table holds for the key below max_inbox, or a new session below max_live. With FollowInOrder it
-\* is handed only once every earlier entry of its key was taken in or is out, and with
-\* FollowSameSlot an earlier entry that is out lets it follow only into the slot the table holds
-\* for the key now. An entry that meets a bound is not handed, and holds every later entry of its
-\* key.
+\* The entry e, read, is handed to the session of its key, with the table held
+\* (Pool::post_followed, which admits it as slot::admission admits an envelope): the stop, then the
+\* inbox of the session the table holds for the key below max_inbox, or a new session below
+\* max_live. With FollowInOrder it is handed only once every earlier entry of its key was taken in
+\* or is out, and with FollowSameSlot an earlier entry that is out lets it follow only into the
+\* slot the table holds for the key now. At the inbox's bound it is put in past the bound, counted
+\* by none, where an envelope of the inbox waits for the reader (Pool::post_past_waiting), which
+\* without PastWaiting it never is. An entry not handed holds every later entry of its key.
 \* @type: (Str) => Bool;
 Hand(e) ==
     LET k == KeyOf(e)
         s == table[k]
     IN
     /\ handed[e] = "no"
+    /\ PositionOf(e) <= read
     /\ follower = (IF StopHoldsTable THEN "idle" ELSE "checked")
     /\ FollowInOrder =>
            \A d \in EarlierOf(e) :
@@ -648,24 +765,56 @@ Hand(e) ==
          THEN /\ ~(BoundLive /\ Cardinality(Held) >= MaxLive)
               /\ NewSlot(e)
               /\ handedTo' = [handedTo EXCEPT ![e] = made + 1]
-         ELSE /\ ~(BoundInbox /\ WaitsAsAnEnvelope(e) /\ Waiting(inbox[s]) >= MaxInbox)
-              /\ TakeInto(e, s)
+              /\ past' = [past EXCEPT ![e] = FALSE]
+       ELSE IF ~(BoundInbox /\ BoundFollowed /\ Waiting(inbox[s]) >= MaxInbox)
+         THEN /\ TakeInto(e, s)
               /\ handedTo' = [handedTo EXCEPT ![e] = s]
+              /\ past' = [past EXCEPT ![e] = FALSE]
+       ELSE /\ PastWaiting
+            /\ \E j \in DOMAIN inbox[s] : WaitsOnReader(inbox[s][j])
+            /\ TakeInto(e, s)
+            /\ handedTo' = [handedTo EXCEPT ![e] = s]
+            /\ past' = [past EXCEPT ![e] = TRUE]
     /\ handed' = [handed EXCEPT ![e] = "out"]
     /\ follower' = "idle"
     /\ UNCHANGED <<closed, loaded, holders, rpc, rslot, rinput, evicting, stopping, stage, mark,
-                   tellVars, applied, took>>
+                   read, readMark, tellVars, applied, took>>
 
 \* At the start of a call the follower reads the receipt of an entry it handed out: one taken in
 \* is passed, and one lost is to be handed out again.
 \* @type: (Str) => Bool;
 Notice(e) ==
+    /\ ~stopping
     /\ handed[e] = "out"
     /\ status[e] \in {"applied", "lost"}
     /\ handed' = [handed EXCEPT ![e] = IF status[e] = "applied" THEN "in" ELSE "no"]
     /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
-                   evicting, status, target, stopping, stage, handedTo, follower, mark, tellVars,
-                   lin, applied, took>>
+                   evicting, status, target, stopping, stage, handedTo, follower, mark, read,
+                   readMark, past, tellVars, lin, applied, took>>
+
+\* The reader reads the next entry of the journal, with ReadWindow only while it holds fewer than
+\* Window read and not yet taken in (FOLLOW_WINDOW).
+Read ==
+    /\ ~stopping
+    /\ read < Len(Journal)
+    /\ ReadWindow => Cardinality(Open) < Window
+    /\ read' = read + 1
+    /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
+                   evicting, status, target, stopping, stage, handed, handedTo, follower, mark,
+                   readMark, past, tellVars, lin, applied, took>>
+
+\* At the end of a call the reader keeps its mark once it rose (JournalStore::keep_read), and the
+\* envelopes that waited for it may be taken (Pool::passed).
+KeepMark ==
+    /\ ~stopping
+    /\ ReadThrough > readMark
+    /\ readMark' = ReadThrough
+    /\ UNCHANGED <<table, made, slotKey, inbox, closed, loaded, holders, rpc, rslot, rinput,
+                   evicting, status, target, stopping, stage, handed, handedTo, follower, mark,
+                   read, past, tellVars, lin, applied, took>>
+
+\* A step of the follower's thread.
+FollowerNext == Read \/ KeepMark \/ \E e \in Entries : Hand(e) \/ Notice(e)
 
 -----------------------------------------------------------------------------
 \* A tell (Pool::tell_holders): an input the pool makes, put in the inbox of each session the table
@@ -677,10 +826,11 @@ WithTell(x, ss) == [s \in Slots |-> IF s \in ss THEN Append(inbox[s], x) ELSE in
 
 \* With TellHoldsTable, x is put in the inbox of every slot the table holds, with the table held.
 \* Without it, the tell looks the slots up and lets the table go, and writes later (TellWrite).
-\* Either is taken whatever the stop, which the pool reads before it takes the table.
+\* Neither is taken once the pool stops, which the tell reads with the table held.
 \* @type: (Str) => Bool;
 Tell(x) ==
     /\ told[x] = "none"
+    /\ ~stopping
     /\ IF TellHoldsTable
          THEN /\ inbox' = WithTell(x, HeldSlots)
               /\ told' = [told EXCEPT ![x] = "told"]
@@ -711,14 +861,24 @@ Next ==
     \/ Stop
     \/ Drained
     \/ Stopped
+    \/ \E s \in Slots : Answer(s)
     \/ FollowerReadsStop
-    \/ \E e \in Entries : Hand(e) \/ Notice(e)
+    \/ FollowerNext
     \/ \E x \in Tells : Tell(x) \/ TellWrite(x)
 
 Spec == Init /\ [][Next]_vars
 
-\* The host runs each key a post named, and an eviction under way ends.
-LiveSpec == Spec /\ (\A r \in Runners : WF_vars(RunnerNext(r))) /\ WF_vars(Out)
+\* A step of the stop's thread once it is decided.
+StopNext == Drained \/ Stopped \/ \E s \in Slots : Save(s) \/ Answer(s)
+
+\* The host runs each key a post named, an eviction under way ends, the host calls the reader on
+\* its schedule, and a stop decided runs on.
+LiveSpec ==
+    /\ Spec
+    /\ \A r \in Runners : WF_vars(RunnerNext(r))
+    /\ WF_vars(Out)
+    /\ WF_vars(FollowerNext)
+    /\ WF_vars(StopNext)
 
 \* Where x is in q.
 \* @type: (Seq(Str), Str) => Int;
@@ -765,4 +925,17 @@ StoppedFollowed == stage = "stopped" => \A e \in Entries : status[e] # "taken"
 
 \* Every entry handed out is taken in, or lost with its slot.
 FollowedSettled == \A e \in Entries : status[e] = "taken" ~> status[e] \in {"applied", "lost"}
+
+\* An envelope that carries a position is applied only once every entry at or below the position
+\* was taken in by the session of its key.
+AppliedAfterRead ==
+    \A k \in Keys : \A i \in DOMAIN applied[k] :
+        applied[k][i] \in Carriers =>
+            \A d \in Entries : PositionOf(d) <= After => InSeq(d, took[KeyOf(d)])
+
+\* No more entries are in inboxes past their bound than the reader's window.
+PastBounded == Cardinality({e \in Entries : past[e] /\ status[e] = "taken"}) <= Window
+
+\* A stop decided ends.
+StopEnds == stage = "draining" ~> stage = "stopped"
 ====
