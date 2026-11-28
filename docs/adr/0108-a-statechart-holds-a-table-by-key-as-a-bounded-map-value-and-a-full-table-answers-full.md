@@ -15,6 +15,9 @@
   Amended by: ADR 0154 (proposed 2026-11-28), D2, D4 "Storage" and D8: Rust has two storages a host lends, sized at
   run time, a host reads the slot each entry is held in, and a map an algorithm builds or copies is kept in the
   owned storage of the map it follows.
+  Amended by: ADR 0086 section 16 (2026-11-28), D4 "Storage": a generated Rust machine's own map takes the storage
+  its deployment's class names, `Inline` on an `mcu` machine and `Heap` on an `ap` machine, and the default only
+  where it is generated with no deployment (section 16.3).
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and

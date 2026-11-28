@@ -8,6 +8,9 @@
   algorithm argued only by hand serves no document until a machine check promotes it, `lost` is linearizable, and a
   close stays declared on type precision alone (section "Review", "The owner's audit").
 - Date: 2026-11-26
+- Amended by: ADR 0086 section 16 (2026-11-28): `<sce:segmented>` is withdrawn, and whether a queue's slots are fixed
+  or grown is the deployment's (`queues.<queue>.storage`); the sequential and locked rings serve grown slots, and the
+  linked Lamport rings and LSCQ held to a bound are candidates under D3 (section 16.4).
 - Numbered 0146 when first written; renumbered on 2026-11-28 because that number also named ADR 0146, "A formal
   judge is one command of the code generator, which every repository runs on its own manifest at the revision it
   pins, this one included", which records outside this repository cite.
