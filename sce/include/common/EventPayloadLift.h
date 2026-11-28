@@ -541,11 +541,47 @@ public:
     }
 
     /**
+     * Past one UTF-8 character at `p` (RFC 3629, section 4), or nullptr when the bytes there are no UTF-8: a
+     * stray continuation, an overlong form, a surrogate code point, or a code point past U+10FFFF. `p` is
+     * terminated, and a terminator is no continuation, so nothing past it is read.
+     */
+    static const char *skipUtf8Character(const char *p) {
+        const auto lead = static_cast<unsigned char>(*p);
+        size_t more = 0;
+        uint32_t code = lead;
+        if (lead >= 0xF0u && lead <= 0xF4u) {
+            more = 3;
+            code = lead & 0x07u;
+        } else if (lead >= 0xE0u && lead <= 0xEFu) {
+            more = 2;
+            code = lead & 0x0Fu;
+        } else if (lead >= 0xC2u && lead <= 0xDFu) {
+            more = 1;
+            code = lead & 0x1Fu;
+        } else if (lead >= 0x80u) {
+            return nullptr;
+        }
+        for (size_t i = 1; i <= more; ++i) {
+            const auto next = static_cast<unsigned char>(p[i]);
+            if ((next & 0xC0u) != 0x80u) {
+                return nullptr;
+            }
+            code = (code << 6) | (next & 0x3Fu);
+        }
+        if ((more == 2 && (code < 0x800u || (code >= 0xD800u && code <= 0xDFFFu))) ||
+            (more == 3 && (code < 0x10000u || code > 0x10FFFFu))) {
+            return nullptr;
+        }
+        return p + more + 1;
+    }
+
+    /**
      * Past one JSON string at `p` in RFC 8259's grammar (sections 7 and 8.2): closed, no character below
      * U+0020 standing unescaped, every escape one of the eight short ones or `\u` and four hex digits, and
      * a `\u` escape of the first half of a UTF-16 pair followed at once by one of the second half, a second
-     * half never alone. nullptr when `p` spells none: a half of a character names no character, so the text
-     * is no JSON text every runtime reads alike (tests/json_text/payload_refusal.json).
+     * half never alone, and every other character UTF-8 (section 8.1), which spells no surrogate code point.
+     * nullptr when `p` spells none: a half of a character names no character, so the text is no JSON text
+     * every runtime reads alike (tests/json_text/payload_refusal.json; docs/adr/0149, D8).
      */
     static const char *skipWellFormedString(const char *p) {
         if (*p != '"') {
@@ -555,6 +591,13 @@ public:
         while (*p != '"') {
             if (*p == '\0' || static_cast<unsigned char>(*p) < 0x20u) {
                 return nullptr;
+            }
+            if (static_cast<unsigned char>(*p) >= 0x80u) {
+                p = skipUtf8Character(p);
+                if (p == nullptr) {
+                    return nullptr;
+                }
+                continue;
             }
             if (*p == '\\') {
                 p++;
@@ -1361,45 +1404,6 @@ private:
         std::string_view member;
     };
 
-    /** Whether `bytes` are UTF-8: no stray continuation, no overlong form, no surrogate, nothing
-     * past U+10FFFF. */
-    static bool isUtf8(std::string_view bytes) {
-        size_t at = 0;
-        while (at < bytes.size()) {
-            const auto lead = static_cast<unsigned char>(bytes[at]);
-            size_t more = 0;
-            uint32_t code = lead;
-            if (lead >= 0xF0u && lead <= 0xF4u) {
-                more = 3;
-                code = lead & 0x07u;
-            } else if (lead >= 0xE0u && lead <= 0xEFu) {
-                more = 2;
-                code = lead & 0x0Fu;
-            } else if (lead >= 0xC2u && lead <= 0xDFu) {
-                more = 1;
-                code = lead & 0x1Fu;
-            } else if (lead >= 0x80u) {
-                return false;
-            }
-            if (more > 0 && at + more >= bytes.size()) {
-                return false;
-            }
-            for (size_t i = 1; i <= more; ++i) {
-                const auto next = static_cast<unsigned char>(bytes[at + i]);
-                if ((next & 0xC0u) != 0x80u) {
-                    return false;
-                }
-                code = (code << 6) | (next & 0x3Fu);
-            }
-            if ((more == 2 && (code < 0x800u || (code >= 0xD800u && code <= 0xDFFFu))) ||
-                (more == 3 && (code < 0x10000u || code > 0x10FFFFu))) {
-                return false;
-            }
-            at += more + 1;
-        }
-        return true;
-    }
-
     /** The pointer to the place `open` stands at, as `liftTooDeep` writes it. */
     static std::string liftScanPointer(const std::vector<LiftScanLevel> &open, uint32_t pathBound) {
         std::string pointer;
@@ -1409,7 +1413,7 @@ private:
                 token = std::to_string(level.index);
             } else {
                 const std::string member(level.member);
-                if (member.empty() || !isUtf8(member) ||
+                if (member.empty() ||
                     detail::EventPayloadScan::skipWellFormedString(member.c_str()) != member.c_str() + member.size() ||
                     !detail::EventPayloadScan::walkText(member.c_str(), token).empty() ||
                     token.find('\0') != std::string::npos) {
