@@ -1238,6 +1238,10 @@ mod tests {
             role: Role::Imported,
             reached_from: Vec::new(),
             reads: Vec::new(),
+            // Its role says an import of the run names it; whether it is
+            // called by a free function does not bear on where it is placed.
+            imported: true,
+            callable: false,
         };
         assert_eq!(
             forge.directory(Language::Kotlin, Some("com.acme.app")),
@@ -1255,6 +1259,7 @@ mod tests {
             name: "door".to_string(),
             kind: UnitKind::Statechart,
             role: Role::Named,
+            imported: false,
             ..forge
         };
         assert_eq!(
