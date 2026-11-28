@@ -2,14 +2,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! What a pool decides of one session's slot under the slot's locks (docs/adr/0107, D3;
-//! docs/adr/0109, D1; SCE_MESH.md section 14.4): whether an envelope for a key is admitted, to the
+//! docs/adr/0109, D1; SCE_MESH.md section 14.4): whether an input for a key is admitted, to the
 //! session the table holds for it or to a new one, or meets a bound; how an inbox counts what it
 //! holds, and when a session may leave the table; and the lease the process holds on the key,
 //! when it comes due for renewal, and what is written and given up under it. `Pool` holds the
 //! table, the inputs, the clock and the store, and decides none of this. These rules are here by
 //! themselves, over counts, fences and moments alone, and proved by Verus (docs/adr/0115, D13): a
 //! stopping pool admits nothing; the table holds no more sessions than `max_live` and an inbox no
-//! more envelopes than `max_inbox`; every input an inbox took is applied once by its session or
+//! more of the inputs its bound counts than `max_inbox`; every input an inbox took is applied once by its session or
 //! answered when the session left the table, which it leaves by itself only when its inbox holds
 //! nothing;
 //! a lease keeps the fence it was granted, a lost lease is neither written under nor renewed, and
@@ -34,11 +34,11 @@
 #[cfg(verus_only)]
 use vstd::prelude::*;
 
-/// Which bound of what the pool holds in memory an envelope met (docs/adr/0109, D1).
+/// Which bound of what the pool holds in memory an input met (docs/adr/0109, D1).
 #[cfg_attr(verus_only, verus_verify)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Full {
-    /// Its session's inbox holds `sessions.max_inbox` envelopes.
+    /// Its session's inbox holds `sessions.max_inbox` of the inputs the bound counts.
     Inbox,
     /// Its key is not in memory, and the pool holds `sessions.max_live`.
     Live,
@@ -47,12 +47,18 @@ pub(crate) enum Full {
 }
 
 /// What one session's inbox holds, as the pool's bounds count it: how many inputs, how many of
-/// them envelopes, and whether the inbox is closed, which it is once its session left the table.
+/// them the bound `max_inbox` counts, and whether the inbox is closed, which it is once its
+/// session left the table. The inputs the bound counts are those that arrive from outside the
+/// pool and wait for their session: an envelope, and an entry of a followed journal, which waits
+/// as an envelope does so that a follower that cannot keep up stops its reader at the bound
+/// (docs/adr/0114, D4), unless the entry was handed past the bound to a session whose envelopes
+/// wait for the reader (docs/adr/0116, D5). Which inputs those are is
+/// `Input::waits_as_an_envelope`'s, in `crate::pool`; every other input is told ([`Door::tell`]).
 #[cfg_attr(verus_only, verus_verify)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Door {
     held: usize,
-    envelopes: usize,
+    bounded: usize,
     closed: bool,
 }
 
@@ -68,7 +74,7 @@ impl Door {
     pub(crate) const fn open() -> Door {
         Door {
             held: 0,
-            envelopes: 0,
+            bounded: 0,
             closed: false,
         }
     }
@@ -82,8 +88,8 @@ impl Door {
         self.held == 0
     }
 
-    /// An envelope is posted to the inbox: whether it is taken, which it is while fewer than
-    /// `max_inbox` envelopes wait in it. One refused changes nothing.
+    /// An input the bound counts is posted to the inbox: whether it is taken, which it is while
+    /// fewer than `max_inbox` of those wait in it. One refused changes nothing.
     #[cfg_attr(verus_only, verus_spec(taken =>
         requires
             old(self).held < usize::MAX,
@@ -95,17 +101,18 @@ impl Door {
             !taken ==> *final(self) == *old(self),
     ))]
     pub(crate) fn post(&mut self, max_inbox: u32) -> bool {
-        if self.envelopes >= max_inbox as usize {
+        if self.bounded >= max_inbox as usize {
             return false;
         }
         self.held += 1;
-        self.envelopes += 1;
+        self.bounded += 1;
         true
     }
 
-    /// An input that is no envelope (a link's readiness, a tick, a wake, a note) is put in the
-    /// inbox: no bound counts it, since the pool makes it itself, at most one per session for each
-    /// call of the host's.
+    /// An input the bound does not count is put in the inbox: one the pool makes itself (a link's
+    /// readiness, a tick, a wake, a note), at most one per session for each call of the host's, or
+    /// an entry of a followed journal handed past the bound to a session whose envelopes wait for
+    /// the reader, which the reader's window bounds instead (docs/adr/0116, D5).
     #[cfg_attr(verus_only, verus_spec(
         requires
             old(self).held < usize::MAX,
@@ -118,7 +125,7 @@ impl Door {
         self.held += 1;
     }
 
-    /// The session's owner took the inbox's oldest input, an envelope when `envelope`.
+    /// The session's owner took the inbox's oldest input, one the bound counts when `counted`.
     #[cfg_attr(verus_only, verus_spec(
         requires
             old(self).held > 0,
@@ -130,10 +137,10 @@ impl Door {
                 == (if envelope { old(self).envelopes - 1 } else { old(self).envelopes as int }),
             final(self).closed == old(self).closed,
     ))]
-    pub(crate) fn took(&mut self, envelope: bool) {
+    pub(crate) fn took(&mut self, counted: bool) {
         self.held -= 1;
-        if envelope {
-            self.envelopes -= 1;
+        if counted {
+            self.bounded -= 1;
         }
     }
 
@@ -172,16 +179,17 @@ impl Door {
         let given = self.held;
         self.closed = true;
         self.held = 0;
-        self.envelopes = 0;
+        self.bounded = 0;
         given
     }
 }
 
-/// What becomes of an envelope posted for a session, with the table held: `door` is the door of
-/// the session the table holds for its key, or `None` when it holds none, and `live` how many
-/// sessions it holds. A stopping pool admits nothing; a key the table holds no session for is
-/// given a new one while the table holds fewer than `max_live`; and the session's inbox takes the
-/// envelope while fewer than `max_inbox` wait in it. Admitted, the door after the post.
+/// What becomes of an input the bound counts posted for a session, with the table held: `door` is
+/// the door of the session the table holds for its key, or `None` when it holds none, and `live`
+/// how many sessions it holds. A stopping pool admits nothing; a key the table holds no session
+/// for is given a new one while the table holds fewer than `max_live`; and the session's inbox
+/// takes the input while fewer than `max_inbox` of those wait in it. Admitted, the door after
+/// the post.
 #[cfg_attr(verus_only, verus_verify)]
 #[cfg_attr(verus_only, verus_spec(admitted =>
     requires
@@ -645,10 +653,11 @@ fn a_lost_lease_is_neither_written_nor_renewed(
 mod tests {
     use super::{admission, renewal_moment, room, Door, Full, KeyLease};
 
-    /// An inbox that took `envelopes` envelopes and `told` other inputs, under a bound none met.
-    fn holding(envelopes: usize, told: usize) -> Door {
+    /// An inbox that took `counted` inputs the bound counts and `told` others, under a bound none
+    /// met.
+    fn holding(counted: usize, told: usize) -> Door {
         let mut door = Door::open();
-        for _ in 0..envelopes {
+        for _ in 0..counted {
             assert!(door.post(u32::MAX));
         }
         for _ in 0..told {

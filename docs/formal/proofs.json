@@ -360,12 +360,12 @@
         },
         {
           "breaks": "an inbox takes an envelope while max_inbox wait in it, past its bound",
-          "from": "if self.envelopes >= max_inbox as usize {",
-          "to": "if self.envelopes > max_inbox as usize {"
+          "from": "if self.bounded >= max_inbox as usize {",
+          "to": "if self.bounded > max_inbox as usize {"
         },
         {
           "breaks": "an envelope taken is not counted, so an inbox takes envelopes past its bound",
-          "from": "        self.envelopes += 1;\n",
+          "from": "        self.bounded += 1;\n",
           "to": ""
         },
         {

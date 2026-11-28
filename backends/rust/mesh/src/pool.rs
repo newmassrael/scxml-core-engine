@@ -575,7 +575,8 @@ impl Input {
     /// Whether the input counts toward the inbox's bound as an envelope does: an envelope, or an
     /// entry of a followed journal, which waits as an envelope does so that a follower that cannot
     /// keep up stops the reader at the bound (docs/adr/0114, D4), unless it was told past the
-    /// bound to a session whose envelopes wait for the reader (docs/adr/0116, D5).
+    /// bound to a session whose envelopes wait for the reader (docs/adr/0116, D5;
+    /// `Followed::counted`). What the inbox's [`Door`] counts as `bounded` is decided here.
     fn waits_as_an_envelope(&self) -> bool {
         match self {
             Input::Envelope { .. } => true,
@@ -615,8 +616,9 @@ impl Inbox {
         self.queue.push_back(input);
     }
 
-    /// Put `input`, which the pool makes itself and is no envelope, in the
-    /// inbox: no bound counts it.
+    /// Put `input`, an input the inbox's bound does not count ([`Door::tell`]), in
+    /// the inbox: one the pool makes itself, or an entry of a followed journal
+    /// handed past the bound (docs/adr/0116, D5).
     fn tell(&mut self, input: Input) {
         self.door.tell();
         self.queue.push_back(input);
