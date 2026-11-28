@@ -138,8 +138,14 @@ from trigger_globs import (  # noqa: E402
 # describing one step of it.
 # ── The push budget ───────────────────────────────────────────────
 #
-# The ceiling on what a push may cost the developer, in the same warm
-# wall-clock seconds `cost_s` is measured in. Set by the owner: a push
+# The ceiling on what a push may cost the developer, in the wall-clock
+# seconds `cost_s` is measured in. Since 2026-11-28 a gate a landing judges
+# declares what it takes WHERE THE LANDING QUEUE JUDGES IT (the median of its
+# last ten landing runs in the integrator's timings.tsv): the queue's
+# judgment is what this ceiling bounds, it runs each unit in a copy of the
+# tree on a build machine, and there the gates read three to ninety times
+# their warm figures (nl-ir-closure 1.3s warm, 117s there). A warm figure
+# under-declares the one cost the budget exists to bound. Set by the owner: a push
 # takes under five minutes. It bounds every push, an update to main
 # included: the landing queue's judgment selects what any push selects, and
 # the gates that do not fit are `ci_only`, which hosted CI audits after they
@@ -226,7 +232,10 @@ PUSH_BUDGET_S = 300
 # 0.237 -> 0.133 on 2026-11-20, for the same kind of reason: `clippy` came back
 # into the push with 82 measured seconds, so the denominator grew to 188.485s
 # while the 25 paced seconds of `codegen-build` stayed where they were.
-PACED_BUDGET_SHARE_CEILING = 0.133
+# 0.133 -> 0.113 on 2026-11-28: the landing gates declare what they take where
+# the landing queue judges them, and the five that do not fit left for CI, so
+# the denominator is now 222s while `codegen-build`'s 25 paced seconds stay.
+PACED_BUDGET_SHARE_CEILING = 0.113
 
 # ── When each cost_s was measured ─────────────────────────────────
 #
@@ -4130,34 +4139,36 @@ def self_test(repo_root: Path) -> int:
     # other side: the path must still be CLASSIFIED. A ci_only gate keeps its
     # triggers for exactly this reason — they are what stop rule 1 from
     # handing back the whole table for a path the registry does understand.
+    # `clippy` is `ci_only` too since 2026-11-28 (its `cost_s` where the
+    # landing queue judges it), so it is checked from the same side.
     check("rust", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build", "clippy"],
-          want_lacks=["workspace-tests"])
+          want_has=["codegen-build"],
+          want_lacks=["workspace-tests", "clippy"])
     # The same edit on an update to main: every `check` asks the hook's
     # `--landing` too, so this case says what the landing leaves to hosted
     # CI. The workspace suite is reached and `ci_only`: the landing does not
     # run it, and `--ci-owed` names it as audited after landing.
     check("rust-landing", ["sce-build/src/mesh/deploy.rs"], want_full=False,
-          want_has=["codegen-build", "clippy"], want_lacks=["workspace-tests"],
-          want_owed=["workspace-tests"])
+          want_has=["codegen-build"], want_lacks=["workspace-tests", "clippy"],
+          want_owed=["workspace-tests", "clippy"])
     # An integration test of the generator crate is compiled by the workspace
     # suite and clippy, and by no build of the generator or the C++ tree. The
     # gates it must not reach are `ci_only` and in no selection, so the case
     # asks what the change reaches.
     check("crate-test-landing", ["sce-build/tests/gate_registry_contract.rs"],
-          want_full=False, want_has=["clippy"],
-          want_lacks=["workspace-tests"],
+          want_full=False, want_has=["http-endpoint-ssot"],
+          want_lacks=["workspace-tests", "clippy"],
           want_unreached=["cpp-suite-wasm", "w3c-cpp", "cpp-suite", "w3c-c11",
                           "w3c-wasm", "install-consumer",
                           "cpp-interface-standard", "forge-rust",
                           "drift-suites", "c11-mcu", "example-codegen",
                           "targets", "doc-content", "generated-deterministic"],
-          want_owed=["workspace-tests"])
+          want_owed=["workspace-tests", "clippy"])
     # Rule 1 on an update to main: every gate a push can run, which is the
     # set `PUSH_BUDGET_S` bounds, and no `ci_only` gate.
     check("unclassified-landing", ["some_new_top_level_dir/thing.txt"],
-          want_full=True, want_has=["clippy"],
-          want_lacks=["cpp-suite-wasm", "windows-msvc", "mutation-rounds"])
+          want_full=True, want_has=["nl-ir-closure"],
+          want_lacks=["cpp-suite-wasm", "windows-msvc", "mutation-rounds", "clippy"])
     # A document under `docs/` that no path-scoped gate reads does not buy
     # rule 1's answer, and the two that a suite reads reach that suite. The
     # tree-wide sweep (`tree-hygiene`) and the suite are `ci_only`: hosted

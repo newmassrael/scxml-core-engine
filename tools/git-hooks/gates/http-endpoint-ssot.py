@@ -35,7 +35,11 @@
     # none of them queued behind the cargo lock. 0.185 is the worse of
     # the last pair. The process the 4 was covering turns out to be
     # ~40ms, not the seconds it was insured against.
-    "cost_s": 0.185,
+    # 8s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 0.185s warm on a developer's tree.
+    "cost_s": 8,
     "summary": "BasicHTTP fixture endpoint has one owner",
     "cache": True,
     # The whole tree, and it stays so: the scan finds its candidates with

@@ -23,6 +23,10 @@
     # builds the generator twice (the comparer in a target directory of
     # its own) and runs every declared tree's actions, about what
     # `regen-reproduces` costs.
+    # 1s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 1s warm on a developer's tree.
     "cost_s": 1,
     "summary": "every action agrees with the fleet's entry of its key",
     "cache": False,

@@ -47,7 +47,13 @@
     "container": "tools/ci-images/host/Containerfile",
     "needs": ["docker"],
     "deps": ["codegen-build"],
-    "cost_s": 17,
+    "ci_only": "453s where the landing queue judges it, which the push budget "
+               "cannot hold beside the rest; forge-conformance.yml runs it after landing.",
+    # 453s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 17s warm on a developer's tree.
+    "cost_s": 453,
     "summary": "C11 forge conformance build + test",
     "cache": True,
     # Keyed on its triggers: what `bx --checks prepush --learn forge-c11`

@@ -28,7 +28,11 @@
         "web/visualizer/*.html",
         "LICENSE-THIRD-PARTY.md",
     ],
-    "cost_s": 0,
+    # 2s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 0s warm on a developer's tree.
+    "cost_s": 2,
     "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
     "cache": True,
     # Read by `check learn` (2026-11-24, bx 340e9f9e): the registry of

@@ -45,7 +45,13 @@
     # queued behind the cargo package-cache lock, which is what makes
     # this the cleanest of the three retirements. 10 is the worse of the
     # last pair. Two pushes that day read 15s and 8s, straddling it.
-    "cost_s": 10,
+    "ci_only": "143s where the landing queue judges it, which the push budget "
+               "cannot hold beside the rest; w3c-tests.yml runs it after landing.",
+    # 143s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 10s warm on a developer's tree.
+    "cost_s": 143,
     "summary": "W3C conformance, Go AOT",
     # It runs in the host image wherever it runs (ADR 0145): the runner runs
     # `scripts/gate` inside the image its Containerfile addresses, so the

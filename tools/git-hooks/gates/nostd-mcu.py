@@ -13,7 +13,11 @@
     # 6-9s. 9 is the worse of the last pair, which is the rule the budget
     # header sets ("the WORSE of two `--measure` runs") so that the
     # ceiling holds on unlucky pushes rather than lucky ones.
-    "cost_s": 9,
+    # 32s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 9s warm on a developer's tree.
+    "cost_s": 32,
     "summary": "no_std MCU build + clippy + probes; std runtime without http-send",
     "cache": True,
     "inputs": None,

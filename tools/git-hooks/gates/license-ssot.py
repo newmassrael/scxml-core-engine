@@ -10,7 +10,11 @@
 {
     "workflows": ["license-verify.yml"],
     "runner_workflow": True,
-    "cost_s": 0,
+    # 2s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 0s warm on a developer's tree.
+    "cost_s": 2,
     "summary": "license SSOT vs the tree it describes",
     # `package_embed.sh` writes `git describe` into the package's VERSION
     # file, which the licence check does not read.

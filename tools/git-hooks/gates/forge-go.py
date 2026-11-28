@@ -30,7 +30,13 @@
     # dropped. 15 is the worse of the last measured pair, the rule the
     # budget header sets. Still the cheapest forge arm and the only one
     # that runs before a push.
-    "cost_s": 15,
+    "ci_only": "336s where the landing queue judges it, which the push budget "
+               "cannot hold beside the rest; forge-conformance.yml runs it after landing.",
+    # 336s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 15s warm on a developer's tree.
+    "cost_s": 336,
     "summary": "Go forge conformance regenerate + test",
     "cache": False,
     "no_cache_reason": "samples thread interleavings: its queue and "

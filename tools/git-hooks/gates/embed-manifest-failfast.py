@@ -14,7 +14,11 @@
 {
     "workflows": ["embed-vendor-smoke.yml"],
     "runner_workflow": True,
-    "cost_s": 0,
+    # 4s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 0s warm on a developer's tree.
+    "cost_s": 4,
     "summary": "emit_embed_manifest fail-fast case",
     # It runs in the host image wherever it runs (ADR 0145): the runner runs
     # `scripts/gate` inside the image its Containerfile addresses, so the

@@ -12,6 +12,10 @@
 {
     "workflows": ["doc-check.yml"],
     "runner_workflow": True,
+    # 4s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 4s warm on a developer's tree.
     "cost_s": 4,
     "summary": "cargo doc broken intra-doc links, both profiles",
     "cache": True,

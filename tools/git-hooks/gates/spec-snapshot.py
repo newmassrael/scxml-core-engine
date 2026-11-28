@@ -10,7 +10,11 @@
 {
     "workflows": ["spec-snapshot-drift.yml"],
     "runner_workflow": True,
-    "cost_s": 13,
+    # 25s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 13s warm on a developer's tree.
+    "cost_s": 25,
     # Its tooling suite judges the citations of every tree the ledgers
     # enrol, so those trees are its trigger, derived from the ledgers'
     # configs (`enrolled_by`, see `enrolled_globs`) and never listed here.

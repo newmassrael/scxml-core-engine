@@ -45,7 +45,11 @@
     # for it: 288s on 2026-09-24, the push after `sce-build`'s dev
     # profile changed. The self-test now derives the edge from the script.
     "deps": ["codegen-build"],
-    "cost_s": 1.3,
+    # 117s where the landing queue judges it: the median of its last ten
+    # landing runs in the integrator's timings.tsv (2026-11-28), the seat the
+    # budget bounds ("The push budget" in gate_registry.py). It read
+    # 1.3s warm on a developer's tree.
+    "cost_s": 117,
     "summary": "the NL→IR closure ledger vs the tree it describes",
     "cache": True,
     "inputs": None,
