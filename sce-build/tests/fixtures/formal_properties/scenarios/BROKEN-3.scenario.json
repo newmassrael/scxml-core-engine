@@ -60,7 +60,7 @@
     },
     {
       "kind": "arrive",
-      "after": 2,
+      "after": 1,
       "event": "push"
     },
     {
@@ -70,7 +70,7 @@
     },
     {
       "kind": "arrive",
-      "after": 3,
+      "after": 2,
       "event": "push"
     }
   ]

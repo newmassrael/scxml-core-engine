@@ -17,6 +17,18 @@
 //! That virtual machine is the pinned runtime's (docs/adr/0146, D3), run by its
 //! path: the `java` a search path finds first is the machine's, whatever its
 //! release.
+//!
+//! TLC's two random choices are fixed: the irreducible polynomial its
+//! fingerprints are taken by (`-fp`) and its seed (`-seed`). Unfixed, TLC
+//! draws both afresh on every run, and the run it reports of a violated
+//! temporal property is the one its search of the state graph met first,
+//! which the fingerprints order. Measured 2026-11-28 on one machine, one
+//! worker and one tree: four runs of the turnstile's broken properties gave
+//! three runs of its `<sce:recurs>` violation and three of its
+//! `<sce:leads-to>`, while each invariant's violation was the same four
+//! times. A scenario written of a violation is committed and replayed on
+//! every lane (docs/adr/0115, D15), so the run that gives it must be the
+//! same run wherever it is judged.
 
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -31,6 +43,12 @@ pub const SAFETY: i32 = 12;
 /// TLC's exit status for a violated temporal property. Any status but these
 /// three is a run that did not judge.
 pub const LIVENESS: i32 = 13;
+
+/// The index of the irreducible polynomial TLC takes its fingerprints by
+/// (`-fp`, one of TLC's 131), the same on every run.
+pub const FINGERPRINT_POLYNOMIAL: u8 = 0;
+/// The seed of TLC's random choices (`-seed`), the same on every run.
+pub const SEED: u64 = 0;
 
 /// What one run of TLC answered.
 #[derive(Debug, Clone)]
@@ -159,6 +177,8 @@ pub fn run(run: &Run<'_>) -> Result<Answer, FormalError> {
 
 /// The command of `run`, in the directory `work` it was staged in.
 ///
+/// `-fp` and `-seed` are [`FINGERPRINT_POLYNOMIAL`] and [`SEED`], so a run
+/// on any machine searches its state graph in one order.
 /// `-workers` is the count the judge was given, and
 /// `-XX:ActiveProcessorCount` makes it the processors the virtual machine
 /// sees, which sizes the collector's threads and any pool TLC sizes by them.
@@ -179,7 +199,9 @@ fn java_command(run: &Run<'_>, work: &Path) -> Command {
         .arg("-cp")
         .arg(run.tools.jar)
         .arg("tlc2.TLC")
-        .args(["-workers", workers.as_str()]);
+        .args(["-workers", workers.as_str()])
+        .args(["-fp", FINGERPRINT_POLYNOMIAL.to_string().as_str()])
+        .args(["-seed", SEED.to_string().as_str()]);
     if run.write_graph {
         command.args(["-dump", "dot", "graph.dot"]);
     }
@@ -238,6 +260,39 @@ mod tests {
             "{args:?}"
         );
         assert!(!args.iter().any(|arg| arg == "auto"), "{args:?}");
+    }
+
+    /// Turns red if a run leaves TLC to draw its fingerprint polynomial or
+    /// its seed, and so the run it reports of a temporal violation.
+    #[test]
+    fn tlc_is_given_one_fingerprint_polynomial_and_one_seed() {
+        let run = Run {
+            tools: Tools {
+                java: Path::new("/opt/jre/bin/java"),
+                jar: Path::new("tla2tools.jar"),
+                library: None,
+            },
+            sources: Path::new("."),
+            module: "M",
+            config_name: "M.cfg",
+            config_text: "",
+            extra: &[],
+            workers: NonZeroUsize::MIN,
+            write_graph: false,
+        };
+        let built = java_command(&run, Path::new("."));
+        let args: Vec<String> = built
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let after = |flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .and_then(|at| args.get(at + 1))
+                .cloned()
+        };
+        assert_eq!(after("-fp").as_deref(), Some("0"), "{args:?}");
+        assert_eq!(after("-seed").as_deref(), Some("0"), "{args:?}");
     }
 
     #[test]
