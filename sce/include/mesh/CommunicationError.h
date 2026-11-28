@@ -77,7 +77,7 @@ using ReasonCode = ::SCE::Common::ErrorReason;
 /// the markdown catalog in both directions, so adding a §mesh-16.7 row
 /// requires adding its code to the vocabulary and to this list. Each row says
 /// what its code reports.
-inline constexpr std::array<ReasonCode, 19> kReasonCodeTable = {{
+inline constexpr std::array<ReasonCode, 20> kReasonCodeTable = {{
     // 1: transport connect or reconnect failure.
     ReasonCode::TransportUnavailable,
     // 2: envelope `send()` returns error from transport API.
@@ -143,6 +143,12 @@ inline constexpr std::array<ReasonCode, 19> kReasonCodeTable = {{
     // acknowledged; raised once per edge by the https client
     // (mesh/transports/HttpsClient.h), on the dialing side.
     ReasonCode::ResponseUnauthenticated,
+    // 20: an instance of an open machine (docs/adr/0113, D4) was fenced:
+    // its server answered an exchange made under the incarnation it held
+    // `412`, so what it waited on may or may not have taken effect. Raised
+    // on the dialing side by the Rust host core's https client, the one core
+    // that carries an instance; no C++ site raises it.
+    ReasonCode::OutcomeUnknown,
 }};
 
 /// The wire string of `code`: the vocabulary's declared name. The empty

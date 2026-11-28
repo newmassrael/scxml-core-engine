@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -53,6 +53,7 @@ const (
 	ErrorReasonRestored ErrorReason = 82
 	ErrorReasonCausalViewMismatch ErrorReason = 83
 	ErrorReasonResponseUnauthenticated ErrorReason = 84
+	ErrorReasonOutcomeUnknown ErrorReason = 85
 )
 
 // ToUnderlying returns the carrier value this holds.
@@ -145,6 +146,8 @@ func (v ErrorReason) DeclaredName() optional.Of[string] {
 		return optional.Some("causalViewMismatch")
 	case ErrorReasonResponseUnauthenticated:
 		return optional.Some("responseUnauthenticated")
+	case ErrorReasonOutcomeUnknown:
+		return optional.Some("outcomeUnknown")
 	}
 	return optional.None[string]()
 }
@@ -231,6 +234,8 @@ func ErrorReasonFromUnderlying(raw uint8) optional.Of[ErrorReason] {
 		return optional.Some(ErrorReasonCausalViewMismatch)
 	case 84:
 		return optional.Some(ErrorReasonResponseUnauthenticated)
+	case 85:
+		return optional.Some(ErrorReasonOutcomeUnknown)
 	}
 	return optional.None[ErrorReason]()
 }

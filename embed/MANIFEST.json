@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "eac8199",
+  "embed_version": "9cc23f2",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 826,
@@ -2462,7 +2462,8 @@
         "NotificationDeadlineMissed",
         "Restored",
         "CausalViewMismatch",
-        "ResponseUnauthenticated"
+        "ResponseUnauthenticated",
+        "OutcomeUnknown"
       ]
     },
     {

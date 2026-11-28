@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -50,6 +50,7 @@ enum class ErrorReason(val raw: UByte) {
     RESTORED(82u.toUByte()),
     CAUSAL_VIEW_MISMATCH(83u.toUByte()),
     RESPONSE_UNAUTHENTICATED(84u.toUByte()),
+    OUTCOME_UNKNOWN(85u.toUByte()),
     ;
 
     /** The carrier value this variant declares. */
@@ -96,6 +97,7 @@ enum class ErrorReason(val raw: UByte) {
         RESTORED -> "restored"
         CAUSAL_VIEW_MISMATCH -> "causalViewMismatch"
         RESPONSE_UNAUTHENTICATED -> "responseUnauthenticated"
+        OUTCOME_UNKNOWN -> "outcomeUnknown"
     }
 
     companion object {

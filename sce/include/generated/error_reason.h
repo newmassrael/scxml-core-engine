@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -56,6 +56,7 @@ enum class ErrorReason : uint8_t {
     Restored = 82,
     CausalViewMismatch = 83,
     ResponseUnauthenticated = 84,
+    OutcomeUnknown = 85,
 };
 
 /// The carrier value this holds.
@@ -146,6 +147,8 @@ constexpr const char *declared_name(ErrorReason value) noexcept {
         return "causalViewMismatch";
     case ErrorReason::ResponseUnauthenticated:
         return "responseUnauthenticated";
+    case ErrorReason::OutcomeUnknown:
+        return "outcomeUnknown";
     }
     return nullptr;
 }
@@ -232,6 +235,8 @@ constexpr std::optional<ErrorReason> from_underlying(uint8_t raw) noexcept {
         return ErrorReason::CausalViewMismatch;
     case 84:
         return ErrorReason::ResponseUnauthenticated;
+    case 85:
+        return ErrorReason::OutcomeUnknown;
     default:
         return std::nullopt;
     }

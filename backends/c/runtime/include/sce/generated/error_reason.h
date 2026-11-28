@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -57,6 +57,7 @@ typedef enum {
     ERROR_REASON_RESTORED = 82,
     ERROR_REASON_CAUSAL_VIEW_MISMATCH = 83,
     ERROR_REASON_RESPONSE_UNAUTHENTICATED = 84,
+    ERROR_REASON_OUTCOME_UNKNOWN = 85,
 } ErrorReason_t;
 
 /* The name the document declares for this value, or NULL for a value no
@@ -141,6 +142,8 @@ static inline const char *error_reason_declared_name(ErrorReason_t value) {
         return "causalViewMismatch";
     case ERROR_REASON_RESPONSE_UNAUTHENTICATED:
         return "responseUnauthenticated";
+    case ERROR_REASON_OUTCOME_UNKNOWN:
+        return "outcomeUnknown";
     }
     return NULL;
 }
@@ -272,6 +275,9 @@ static inline bool error_reason_from_underlying(uint8_t raw, ErrorReason_t *out)
         return true;
     case 84:
         *out = ERROR_REASON_RESPONSE_UNAUTHENTICATED;
+        return true;
+    case 85:
+        *out = ERROR_REASON_OUTCOME_UNKNOWN;
         return true;
     default:
         return false;

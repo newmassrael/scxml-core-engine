@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 #![doc = "SCE-MAP: error_reason.scxml:60 :: _forge_body"]
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
@@ -51,6 +51,7 @@ pub enum ErrorReason {
     Restored = 82,
     CausalViewMismatch = 83,
     ResponseUnauthenticated = 84,
+    OutcomeUnknown = 85,
 }
 
 #[allow(dead_code)]
@@ -103,6 +104,7 @@ impl ErrorReason {
             82 => Some(Self::Restored),
             83 => Some(Self::CausalViewMismatch),
             84 => Some(Self::ResponseUnauthenticated),
+            85 => Some(Self::OutcomeUnknown),
             _ => None,
         }
     }
@@ -149,6 +151,7 @@ impl ErrorReason {
             Self::Restored => "restored",
             Self::CausalViewMismatch => "causalViewMismatch",
             Self::ResponseUnauthenticated => "responseUnauthenticated",
+            Self::OutcomeUnknown => "outcomeUnknown",
         }
     }
 }

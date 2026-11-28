@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fe68fdc05585b1e50c11ec60d0fe2b92da7ec3d123fe5ec14cc8aec297087c71
+// source-hash: 23b734cba3b99db67184128a8a40e156adea520255d96934f32e5bd6eef884be
 // source: error_reason.scxml
 // SCE-MAP: error_reason.scxml:60 :: _forge_body
 
@@ -54,6 +54,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
     case restored = 82
     case causalViewMismatch = 83
     case responseUnauthenticated = 84
+    case outcomeUnknown = 85
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -97,6 +98,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case .restored: return "restored"
         case .causalViewMismatch: return "causalViewMismatch"
         case .responseUnauthenticated: return "responseUnauthenticated"
+        case .outcomeUnknown: return "outcomeUnknown"
         }
     }
 
@@ -153,6 +155,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case "restored": self = .restored
         case "causalViewMismatch": self = .causalViewMismatch
         case "responseUnauthenticated": self = .responseUnauthenticated
+        case "outcomeUnknown": self = .outcomeUnknown
         default: return nil
         }
     }
