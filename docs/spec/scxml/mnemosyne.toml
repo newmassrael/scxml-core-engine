@@ -198,6 +198,11 @@ scan_exclusions = [
     # Mesh ledger's) and, in the generated codecs, `§synth-5` — so excluding
     # it swallows no section from this gate.
     "backends/rust/mesh/",
+    # The browser node (`sce-rust-browser-node`, ADR 0117 step 4): the Mesh HTTPS client
+    # compiled to WebAssembly for a page. It implements no clause of the Recommendation.
+    # Measured 2026-11-28 over its 2 Rust sources: not one carries a `§` citation, so
+    # excluding them swallows no section from this gate.
+    "backends/rust/browser-node/",
     "backends/rust/lua/",
     "backends/rust/portable-bytes/",
     "backends/rust/probes/",
