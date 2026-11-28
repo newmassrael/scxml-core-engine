@@ -3,6 +3,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
+    "AbsentPlace": {
+      "description": "Where an order term puts an absent value (docs/adr/0151, D2; SQL's `NULLS FIRST` and `NULLS LAST`). Unwritten, an absent value is before every present one, so first under `asc` and last under `desc`.",
+      "enum": [
+        "first",
+        "last"
+      ],
+      "type": "string"
+    },
     "Action": {
       "description": "W3C SCXML executable content action",
       "properties": {
@@ -5373,7 +5381,7 @@
           "type": "string"
         },
         {
-          "description": "A read model — docs/adr/0151, D1: a relational query over bounded keyed tables (from, join, where, group, select, order) read into a typed plan the build makes before anything runs, its key inferred, its order total and every table read through the filter of the viewer's relations (D6); or a document of relations, the rewrites a viewer's relations are derived by (D5). Rust is its lane (D10); until the lane lands, and on every other backend, generation refuses it by name (`view/backend-unsupported`).",
+          "description": "A read model — docs/adr/0151, D1: a relational query over bounded keyed tables (from, join, where, group, select, order) read into a typed plan the build makes before anything runs, its key inferred, its order total and every table read through the filter of the viewer's relations (D6); or a document of relations, the rewrites a viewer's relations are derived by (D5). Rust is its lane (D11); until the lane lands, and on every other backend, generation refuses it by name (`view/backend-unsupported`).",
           "enum": [
             "view"
           ],
@@ -9978,8 +9986,14 @@
           "type": "object"
         },
         {
-          "description": "`<sce:nest name type order>`: the group's rows as a list.",
+          "description": "`<sce:nest name row order bound>`: the group's rows, cut by their order, and the count of them all.",
           "properties": {
+            "bound": {
+              "description": "The most rows it holds, cut by its order (D2), by name (D8).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
             "fields": {
               "items": {
                 "$ref": "#/definitions/ViewOutputField"
@@ -10010,20 +10024,17 @@
               ],
               "type": "string"
             },
-            "type": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ValueType"
-                }
-              ],
-              "description": "The list it is, `list<record:R>[B]`: its bound cuts it by its order (D2)."
+            "row": {
+              "description": "The alias of the event schema whose record each of its rows is.",
+              "type": "string"
             }
           },
           "required": [
+            "bound",
             "fields",
             "name",
             "output",
-            "type"
+            "row"
           ],
           "type": "object"
         }
@@ -10038,8 +10049,18 @@
       "type": "string"
     },
     "ViewOrderKey": {
-      "description": "One key of an order: an expression, ascending unless `desc` is written.",
+      "description": "One key of an order: an expression, ascending unless `desc` is written, and where an absent value stands when `absent first` or `absent last` says so (docs/adr/0151, D2).",
       "properties": {
+        "absent": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AbsentPlace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "descending": {
           "type": "boolean"
         },
@@ -10415,8 +10436,14 @@
           "type": "object"
         },
         {
-          "description": "`<sce:visible relations relation object>`: a row may be read by the viewers that stand in `relation` to the object `object` names, the relation derived by the document of relations imported as `relations`. `object` is an expression over the row's `key` and `row`.",
+          "description": "`<sce:visible relations relation object at>`: a row may be read by the viewers that stand in `relation` to the object `object` names, the relation derived by the document of relations imported as `relations`. `object` is an expression over the row's `key` and `row`; `at`, where written, the position of the relations' stream the row's writer read (D6, D9).",
           "properties": {
+            "at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "object": {
               "type": "string"
             },
