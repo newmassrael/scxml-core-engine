@@ -482,6 +482,10 @@ label_set! {
         /// Its instance's offer stands while as many members of its open machine stand as
         /// `max_instances` allows, none of whom is put out for it (docs/adr/0113, D6): `503`.
         MaxInstances => "max_instances",
+        /// The port of proofs of a person could not judge the proof an exchange carried to
+        /// confirm its instance's offer: the identity provider it asks did not answer
+        /// (docs/adr/0116, D8): `503`.
+        IdentityProvider => "identity_provider",
     }
 }
 

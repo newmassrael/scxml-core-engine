@@ -925,7 +925,7 @@ value.
 | `sce_metrics_info` | info | `registry`: `sce-metrics-1` | always 1, rendered by the reference adapter |
 | `sce_server_exchanges_total` | counter | `status`: `200`, `400`, `401`, `404`, `405`, `408`, `412`, `413`, `415`, `429`, `503` | each exchange the server answered, by the status of its answer |
 | `sce_server_held_exchanges` | gauge | none | an exchange held open while its client's mailbox is empty, from its first wait until it is answered or its connection drops |
-| `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source`, `max_instances` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
+| `sce_server_sheds_total` | counter | `reason`: `rate`, `concurrency`, `max_clients`, `max_connections`, `max_connections_per_address`, `durability`, `store`, `stopping`, `random_source`, `max_instances`, `identity_provider` | each `429` and each `503` the server answered, and each connection it closed at accept, by why (below) |
 | `sce_server_authentication_failures_total` | counter | `authenticator`: `bearer`, `install`, `mtls`, `key` | each `401`, by the authenticator that refused it |
 | `sce_pool_live_sessions` | gauge | none | a session brought into memory, and one dropped from it (finished, evicted, lost, stopped) |
 | `sce_pool_loads_total` | counter | none | each session brought into memory, started or restored |
@@ -954,7 +954,10 @@ Why a server sheds, each a value of `reason`:
 - `store`: a store the exchange reads could not be read or written: the pin store of `install` or `key`, or a durable
   client's outbox (`503`);
 - `stopping`: the server is stopping (`503`, section 4.1);
-- `random_source`: no incarnation could be drawn for a mailbox (`503`).
+- `random_source`: no incarnation could be drawn for a mailbox (`503`);
+- `identity_provider`: the port of proofs of a person could not judge the proof an exchange carried to confirm its
+  instance's offer, since the identity provider it asks did not answer (`503`, ADR 0116 D8). Nothing was written, and
+  the offer stands until `login_ms`; a proof the port judged and refused is a `401`, not a shed.
 
 So each `429` and each `503` the server answers is one shed, and the sum of `sce_server_sheds_total` less its
 connection reasons is the sum of `sce_server_exchanges_total` over `429` and `503`.

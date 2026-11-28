@@ -27,7 +27,7 @@
       "name": "sce_server_sheds",
       "type": "counter",
       "unit": "",
-      "labels": [{"name": "reason", "values": ["rate", "concurrency", "max_clients", "max_connections", "max_connections_per_address", "durability", "store", "stopping", "random_source", "max_instances"]}],
+      "labels": [{"name": "reason", "values": ["rate", "concurrency", "max_clients", "max_connections", "max_connections_per_address", "durability", "store", "stopping", "random_source", "max_instances", "identity_provider"]}],
       "lanes": ["rust"]
     },
     {

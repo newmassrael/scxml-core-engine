@@ -4417,3 +4417,19 @@ Landing: the commits that add this section. No committed generated tree changes,
   no drop of an engine's own inbox that reaches its tree: a release library of such machines is smaller than at the
   landing before (about 2.2 KB in the measurement ADR 0084 records), and making an engine no longer draws the hash
   map's random keys.
+
+## A port of proofs of a person says when it could not judge a proof (ADR 0116 D8, amended 2026-11-28)
+
+Landing: the commits that add this section. No committed generated tree changes, and no template does.
+
+- `IdentityProof::verify` returns `Result<Person, ProofError>`. `ProofError::Refused(ProofRefused)` is a proof judged
+  and refused; `From<ProofRefused>` keeps an adapter's `?` on a refusal, and a `return Err(refused)` becomes
+  `return Err(refused.into())`. An adapter whose identity provider does not answer (a code exchange that times out, or
+  is answered `5xx`) returns `ProofError::Unavailable`, not `ProofRefused::Malformed`.
+- `Proved` gains `Unavailable`, and `sce_rust_metrics::ServerShed` gains `IdentityProvider`
+  (`identity_provider`); a `match` that names every variant of either names it. The server answers it `503` with
+  `Retry-After`, as load shed, writes nothing, and the offer stands until `login_ms`: the instance sends the
+  exchange again, and a refused proof is still `401` with `error="invalid_proof"`.
+- The kit of `principal_conformance` judges each proof once and compares a refusal as
+  `Err(ProofError::Refused(..))`; a harness's `proof` is called once for each judgement, so one that hands out an
+  authorization code hands out another at each call.

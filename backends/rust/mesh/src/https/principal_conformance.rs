@@ -4,7 +4,7 @@
 //! What every adapter of the port of proofs ([`IdentityProof`]) is held to (docs/adr/0116, D8): a
 //! good proof names its person, and a proof made for another challenge, signed by a key the port
 //! does not trust, made for another audience, by another issuer, or judged out of its time, is
-//! refused, each by its name; bytes that are no proof are refused too.
+//! refused, each by its name ([`ProofError::Refused`]); bytes that are no proof are refused too.
 //!
 //! An adapter runs these functions from its own `#[test]`s, with a harness that makes proofs as the
 //! identity provider it trusts would, and as one wrong in one part would ([`ProofHarness`]). The
@@ -23,7 +23,7 @@ use sce_rust_crypto::equal::same_secret;
 use sce_rust_crypto::mac::{hmac_sha256, TAG_BYTES};
 use sce_rust_session_store::Person;
 
-use super::principal::{Challenge, IdentityProof, Offering, ProofRefused};
+use super::principal::{Challenge, IdentityProof, Offering, ProofError, ProofRefused};
 
 /// How a harness makes a proof: as the identity provider the port trusts would, or wrong in one
 /// part.
@@ -88,7 +88,7 @@ pub fn a_good_proof_names_its_person(harness: &impl ProofHarness) {
     let person = harness
         .port()
         .verify(&proof, &challenge, MADE_MS + 1_000)
-        .unwrap_or_else(|refused| panic!("a good proof was refused: {refused}"));
+        .unwrap_or_else(|error| panic!("a good proof was given no person: {error:?}"));
     assert_eq!(person.issuer, harness.issuer());
     assert_eq!(person.subject, "alice");
     assert_eq!(person.proved_ms, MADE_MS, "when the person proved it");
@@ -101,7 +101,7 @@ pub fn a_proof_of_another_challenge_is_refused(harness: &impl ProofHarness) {
     let proof = harness.proof("alice", &next, MADE_MS, Made::Good);
     assert_eq!(
         harness.port().verify(&proof, &challenge, MADE_MS + 1_000),
-        Err(ProofRefused::Challenge)
+        Err(ProofError::Refused(ProofRefused::Challenge))
     );
 }
 
@@ -111,7 +111,7 @@ pub fn a_proof_signed_by_another_key_is_refused(harness: &impl ProofHarness) {
     let proof = harness.proof("alice", &challenge, MADE_MS, Made::SignedByAnother);
     assert_eq!(
         harness.port().verify(&proof, &challenge, MADE_MS + 1_000),
-        Err(ProofRefused::Signature)
+        Err(ProofError::Refused(ProofRefused::Signature))
     );
 }
 
@@ -121,7 +121,7 @@ pub fn a_proof_for_another_audience_is_refused(harness: &impl ProofHarness) {
     let proof = harness.proof("alice", &challenge, MADE_MS, Made::ForAnotherAudience);
     assert_eq!(
         harness.port().verify(&proof, &challenge, MADE_MS + 1_000),
-        Err(ProofRefused::Audience)
+        Err(ProofError::Refused(ProofRefused::Audience))
     );
 }
 
@@ -131,7 +131,7 @@ pub fn a_proof_of_another_issuer_is_refused(harness: &impl ProofHarness) {
     let proof = harness.proof("alice", &challenge, MADE_MS, Made::ByAnotherIssuer);
     assert_eq!(
         harness.port().verify(&proof, &challenge, MADE_MS + 1_000),
-        Err(ProofRefused::Issuer)
+        Err(ProofError::Refused(ProofRefused::Issuer))
     );
 }
 
@@ -143,13 +143,13 @@ pub fn a_proof_out_of_its_time_is_refused(harness: &impl ProofHarness) {
     let stale = harness.proof("alice", &challenge, MADE_MS, Made::Good);
     assert_eq!(
         port.verify(&stale, &challenge, MADE_MS + harness.valid_ms()),
-        Err(ProofRefused::Time),
+        Err(ProofError::Refused(ProofRefused::Time)),
         "no longer good"
     );
     let early = harness.proof("alice", &challenge, MADE_MS, Made::Good);
     assert_eq!(
         port.verify(&early, &challenge, MADE_MS - harness.valid_ms()),
-        Err(ProofRefused::Time),
+        Err(ProofError::Refused(ProofRefused::Time)),
         "made later than it is judged"
     );
 }
@@ -161,7 +161,7 @@ pub fn bytes_that_are_no_proof_are_refused(harness: &impl ProofHarness) {
         harness
             .port()
             .verify(b"no proof", &challenge, MADE_MS + 1_000),
-        Err(ProofRefused::Malformed)
+        Err(ProofError::Refused(ProofRefused::Malformed))
     );
 }
 
@@ -252,7 +252,7 @@ impl IdentityProof for TestProof {
         proof: &[u8],
         challenge: &Challenge,
         now_ms: u64,
-    ) -> Result<Person, ProofRefused> {
+    ) -> Result<Person, ProofError> {
         let signed_length = proof
             .len()
             .checked_sub(TAG_BYTES)
@@ -260,19 +260,19 @@ impl IdentityProof for TestProof {
         let (signed, tag) = proof.split_at(signed_length);
         let fields = fields(signed).ok_or(ProofRefused::Malformed)?;
         if !same_secret(&hmac_sha256(&self.key, signed), tag) {
-            return Err(ProofRefused::Signature);
+            return Err(ProofRefused::Signature.into());
         }
         if fields.issuer != self.issuer {
-            return Err(ProofRefused::Issuer);
+            return Err(ProofRefused::Issuer.into());
         }
         if fields.audience != self.audience {
-            return Err(ProofRefused::Audience);
+            return Err(ProofRefused::Audience.into());
         }
         if fields.challenge != challenge.text() {
-            return Err(ProofRefused::Challenge);
+            return Err(ProofRefused::Challenge.into());
         }
         if now_ms < fields.made_ms || now_ms >= fields.made_ms.saturating_add(self.valid_ms) {
-            return Err(ProofRefused::Time);
+            return Err(ProofRefused::Time.into());
         }
         Ok(Person {
             issuer: fields.issuer,
@@ -353,9 +353,9 @@ mod tests {
             proof: &[u8],
             challenge: &Challenge,
             now_ms: u64,
-        ) -> Result<Person, ProofRefused> {
+        ) -> Result<Person, ProofError> {
             if !self.judged.lock().expect("held").insert(proof.to_vec()) {
-                return Err(ProofRefused::Malformed);
+                return Err(ProofRefused::Malformed.into());
             }
             let (_, made) = proof
                 .split_first_chunk::<8>()

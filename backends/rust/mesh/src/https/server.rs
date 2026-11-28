@@ -2179,7 +2179,7 @@ async fn exchange(
                     // An exchange that names an offer waiting for a proof confirms it only with a
                     // proof in its body, judged for that offer and the key that signed it.
                     let admitted = tokio::task::spawn_blocking(move || {
-                        let judged = 'judged: {
+                        let (judged, with_proof) = 'judged: {
                             let admitted = store.admit(&member, incarnation, mark, terms, now)?;
                             let (
                                 sce_rust_session_store::Admission::Unproved,
@@ -2187,7 +2187,7 @@ async fn exchange(
                                 Some(key),
                             ) = (admitted, people, key)
                             else {
-                                break 'judged Some((admitted, false));
+                                break 'judged (Proved::Judged(admitted), false);
                             };
                             let edge = PersonEdge {
                                 store: &*store,
@@ -2204,21 +2204,17 @@ async fn exchange(
                                 mark,
                                 proof: &proof,
                             };
-                            match edge.confirm(&confirming, now)? {
-                                Proved::Judged(admitted) => Some((admitted, true)),
-                                Proved::Refused(_) => None,
-                            }
+                            (edge.confirm(&confirming, now)?, true)
                         };
                         // docs/adr/0116, D1 and D3: the person the incarnation the exchange was
                         // taken in under acts for, as the store holds it, which every event its
                         // envelopes raise carries; a delegation is bound only where the program
                         // keeps the people behind instances.
                         let acting = match judged {
-                            Some((
+                            Proved::Judged(
                                 sce_rust_session_store::Admission::Current { .. }
                                 | sce_rust_session_store::Admission::Confirmed { .. },
-                                _,
-                            )) if reads_people => store
+                            ) if reads_people => store
                                 .membership(&member)?
                                 .member
                                 .filter(|held| held.incarnation == incarnation)
@@ -2226,9 +2222,7 @@ async fn exchange(
                                 .map(|delegation| principal_of(&delegation.person, &instance)),
                             _ => None,
                         };
-                        Ok::<_, sce_rust_session_store::Failure>(
-                            judged.map(|(admitted, with_proof)| (admitted, with_proof, acting)),
-                        )
+                        Ok::<_, sce_rust_session_store::Failure>((judged, with_proof, acting))
                     })
                     .await;
                     let judgement = |mark, confirmed, acting| Judgement {
@@ -2238,24 +2232,31 @@ async fn exchange(
                         acting,
                     };
                     match admitted {
-                        Ok(Ok(Some((
-                            sce_rust_session_store::Admission::Current { mark },
+                        Ok(Ok((
+                            Proved::Judged(sce_rust_session_store::Admission::Current { mark }),
                             _,
                             acting,
-                        )))) => Some(judgement(mark, false, acting)),
-                        Ok(Ok(Some((
-                            sce_rust_session_store::Admission::Confirmed { mark, .. },
+                        ))) => Some(judgement(mark, false, acting)),
+                        Ok(Ok((
+                            Proved::Judged(sce_rust_session_store::Admission::Confirmed {
+                                mark,
+                                ..
+                            }),
                             with_proof,
                             acting,
-                        )))) => {
+                        ))) => {
                             // A body that was a proof of a person carries no envelope.
                             proof_taken = with_proof;
                             Some(judgement(mark, true, acting))
                         }
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Fenced { .. }, _, _)))) => {
+                        Ok(Ok((
+                            Proved::Judged(sce_rust_session_store::Admission::Fenced { .. }),
+                            _,
+                            _,
+                        ))) => {
                             return fenced(&shared, answered.as_ref());
                         }
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Full, _, _)))) => {
+                        Ok(Ok((Proved::Judged(sce_rust_session_store::Admission::Full), _, _))) => {
                             return shared.shed(
                                 ServerShed::MaxInstances,
                                 ResponseStatus::ServiceUnavailable,
@@ -2265,8 +2266,22 @@ async fn exchange(
                         // docs/adr/0116, D2: the offer waits for a proof this exchange did not
                         // carry, or the port refused the one it did: nothing was written, and the
                         // offer stands, until it runs out, for a good one.
-                        Ok(Ok(Some((sce_rust_session_store::Admission::Unproved, _, _))))
-                        | Ok(Ok(None)) => return unproved(&shared),
+                        Ok(Ok((
+                            Proved::Judged(sce_rust_session_store::Admission::Unproved)
+                            | Proved::Refused(_),
+                            _,
+                            _,
+                        ))) => return unproved(&shared),
+                        // docs/adr/0116, D8: the port could not judge the proof, since the
+                        // identity provider it asks did not answer. That is no refusal: it is load
+                        // the server cannot take now, and the offer stands, as after a refusal.
+                        Ok(Ok((Proved::Unavailable, _, _))) => {
+                            return shared.shed(
+                                ServerShed::IdentityProvider,
+                                ResponseStatus::ServiceUnavailable,
+                                settings.retry_after,
+                            );
+                        }
                         _ => {
                             return shared.shed(
                                 ServerShed::Store,
@@ -5003,51 +5018,67 @@ mod tests {
         );
     }
 
-    /// docs/adr/0116, D2, at the server's edge: a join that says a proof follows is offered an
-    /// incarnation that only an exchange whose body is a proof of a person, made for that offer and
-    /// the key that signed the exchange, confirms; one without is refused `401` and the offer
-    /// stands; the proof binds the person to the incarnation, and is no envelope. Red if the edge
-    /// confirms a proof-waiting offer without a proof, or hands the proof to the host as envelopes.
-    #[test]
-    fn a_join_that_says_a_proof_follows_is_confirmed_by_a_proof_alone() {
-        use super::super::principal::{Challenge, Login, Offering};
-        use super::super::principal_conformance::TestProof;
-        use super::super::signature::RequestSigner;
-        use super::super::{HttpsTransport, JOINING_HEADER, JOINING_PROOF, MARK_HEADER};
-        use sce_rust_session_store::MembershipStore;
+    use super::super::principal::{Challenge, Offering, ProofError};
+    use super::super::principal_conformance::TestProof;
 
-        const PROOF_KEY: [u8; 32] = [7; 32];
-        const ISSUER: &str = "https://id.example";
-        let host = OfInstances {
-            judged: Arc::new(Mutex::new(Vec::new())),
-            answer: Arc::new(Mutex::new(Durability::Now)),
-        };
-        let server = HttpsServer::new(
-            ServerSettings::default(),
-            Authenticator::Key(KeyPins::first_use(Arc::new(MemoryCredentials::new()))),
-            |name: &str| instance_of(name).is_some_and(|(machine, _)| machine == "phone"),
-            host.clone(),
-        )
-        .expect("a server");
-        let store = Arc::new(sce_rust_session_store::MemoryStore::new());
-        server.keep_members(Arc::clone(&store) as Arc<dyn MembershipStore>, &OPEN);
-        server.keep_principals(
-            Arc::new(TestProof::new(PROOF_KEY, ISSUER, OPEN.name, 60_000)),
-            Login {
-                login_ms: 30_000,
-                person_ttl_ms: 5_000,
-            },
-        );
-        let Serving {
-            _runtime,
-            address,
-            port,
-            ..
-        } = listening(server);
-        let key = KeyPair::from_seed(&[1u8; 32]);
-        let key_id = RequestSigner::new(key.clone()).key_id().to_string();
-        let send = |body: Vec<u8>, extra: &[(&str, String)]| {
-            let url = alloc::format!("http://{address}/sce-mesh/1/phone/a1");
+    /// The key the identity provider a server's [`TestProof`] trusts signs its proofs under, and
+    /// the issuer it names.
+    const PROOF_KEY: [u8; 32] = [7; 32];
+    const ISSUER: &str = "https://id.example";
+
+    /// A server of the open machine `phone` under the `key` authenticator that keeps the people
+    /// behind its instances (docs/adr/0116, D2), judging their proofs by a port of the test's, with
+    /// a host of instances behind it, reporting to a recording adapter; and the key the instance
+    /// `phone/a1` signs its exchanges with.
+    struct Proving {
+        serving: Serving,
+        store: Arc<sce_rust_session_store::MemoryStore>,
+        host: OfInstances,
+        recording: Arc<sce_rust_metrics::recording::Recording>,
+        key: KeyPair,
+    }
+
+    impl Proving {
+        /// The server, judging proofs by `port` under a `login_ms` of 30 s and a
+        /// `person_ttl_ms` of 5 s.
+        fn new(port: Arc<dyn IdentityProof>) -> Self {
+            let host = OfInstances {
+                judged: Arc::new(Mutex::new(Vec::new())),
+                answer: Arc::new(Mutex::new(Durability::Now)),
+            };
+            let recording = Arc::new(sce_rust_metrics::recording::Recording::new());
+            let server = HttpsServer::observed(
+                ServerSettings::default(),
+                Authenticator::Key(KeyPins::first_use(Arc::new(MemoryCredentials::new()))),
+                |name: &str| instance_of(name).is_some_and(|(machine, _)| machine == "phone"),
+                host.clone(),
+                Arc::clone(&recording) as Arc<dyn Metrics>,
+            )
+            .expect("a server");
+            let store = Arc::new(sce_rust_session_store::MemoryStore::new());
+            server.keep_members(Arc::clone(&store) as Arc<dyn MembershipStore>, &OPEN);
+            server.keep_principals(
+                port,
+                Login {
+                    login_ms: 30_000,
+                    person_ttl_ms: 5_000,
+                },
+            );
+            Proving {
+                serving: listening(server),
+                store,
+                host,
+                recording,
+                key: KeyPair::from_seed(&[1u8; 32]),
+            }
+        }
+
+        /// An exchange of `phone/a1` that carries `body` and the fields `extra`, signed by its
+        /// key.
+        fn send(&self, body: Vec<u8>, extra: &[(&str, String)]) -> super::super::HttpsResponse {
+            use super::super::HttpsTransport;
+
+            let url = alloc::format!("http://{}/sce-mesh/1/phone/a1", self.serving.address);
             let mut headers = alloc::vec![
                 ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
                 (ACK_HEADER.to_string(), "0".to_string()),
@@ -5060,58 +5091,95 @@ mod tests {
                     .iter()
                     .map(|(name, value)| (name.to_string(), value.clone())),
             );
-            let signed = RequestSigner::new(key.clone())
+            let signed = RequestSigner::new(self.key.clone())
                 .sign(
-                    &super::super::signature::normalize_target_uri(&url).expect("a URL"),
+                    &normalize_target_uri(&url).expect("a URL"),
                     &headers,
                     unix_seconds(),
                 )
                 .expect("every covered field");
             headers.extend(signed);
-            port.exchange(super::super::HttpsRequest {
-                url,
-                headers,
-                body,
-                timeout: Duration::from_secs(10),
-            })
-            .expect("a response")
-        };
+            self.serving
+                .port
+                .exchange(super::super::HttpsRequest {
+                    url,
+                    headers,
+                    body,
+                    timeout: Duration::from_secs(10),
+                })
+                .expect("a response")
+        }
 
-        let offered = send(Vec::new(), &[(JOINING_HEADER, JOINING_PROOF.to_string())]);
-        assert_eq!(offered.status, 200);
-        let offer = offered
-            .header(ETAG_HEADER)
-            .and_then(incarnation_of)
-            .expect("an offer");
-        let under = [
-            (IF_MATCH_HEADER, entity_tag(offer)),
-            (MARK_HEADER, "1".to_string()),
-        ];
-        let without = send(Vec::new(), &under);
+        /// A join of `phone/a1` that says a proof follows: the incarnation it is offered.
+        fn join(&self) -> u64 {
+            use super::super::JOINING_HEADER;
+
+            let offered = self.send(Vec::new(), &[(JOINING_HEADER, JOINING_PROOF.to_string())]);
+            assert_eq!(offered.status, 200, "a join is offered");
+            offered
+                .header(ETAG_HEADER)
+                .and_then(incarnation_of)
+                .expect("an offer")
+        }
+
+        /// A proof of `subject` the trusted identity provider makes now for the offer of
+        /// `incarnation` to `phone/a1` and its key.
+        fn proof(&self, subject: &str, incarnation: u64) -> Vec<u8> {
+            let key = RequestSigner::new(self.key.clone()).key_id().to_string();
+            TestProof::make(
+                &PROOF_KEY,
+                ISSUER,
+                OPEN.name,
+                subject,
+                &Challenge::of(&Offering {
+                    server: OPEN.name,
+                    machine: "phone",
+                    instance: "a1",
+                    key: &key,
+                    incarnation,
+                }),
+                unix_millis(),
+            )
+        }
+    }
+
+    /// The fields of an exchange of `phone/a1` under the offer of `incarnation`, with the mark 1.
+    fn under_offer(incarnation: u64) -> [(&'static str, String); 2] {
+        [
+            (IF_MATCH_HEADER, entity_tag(incarnation)),
+            (super::super::MARK_HEADER, "1".to_string()),
+        ]
+    }
+
+    /// docs/adr/0116, D2, at the server's edge: a join that says a proof follows is offered an
+    /// incarnation that only an exchange whose body is a proof of a person, made for that offer and
+    /// the key that signed the exchange, confirms; one without is refused `401` and the offer
+    /// stands; the proof binds the person to the incarnation, and is no envelope. Red if the edge
+    /// confirms a proof-waiting offer without a proof, or hands the proof to the host as envelopes.
+    #[test]
+    fn a_join_that_says_a_proof_follows_is_confirmed_by_a_proof_alone() {
+        let proving = Proving::new(Arc::new(TestProof::new(
+            PROOF_KEY, ISSUER, OPEN.name, 60_000,
+        )));
+        let offer = proving.join();
+        let under = under_offer(offer);
+        let without = proving.send(Vec::new(), &under);
         assert_eq!(without.status, 401, "an offer waiting for a proof");
         assert_eq!(
             without.header("WWW-Authenticate"),
             Some("SCE-Signature error=\"invalid_proof\"")
         );
-        assert!(store.membership("phone/a1").expect("read").member.is_none());
+        assert!(proving
+            .store
+            .membership("phone/a1")
+            .expect("read")
+            .member
+            .is_none());
 
-        let proof = TestProof::make(
-            &PROOF_KEY,
-            ISSUER,
-            OPEN.name,
-            "alice",
-            &Challenge::of(&Offering {
-                server: OPEN.name,
-                machine: "phone",
-                instance: "a1",
-                key: &key_id,
-                incarnation: offer,
-            }),
-            unix_millis(),
-        );
-        let confirmed = send(proof, &under);
+        let confirmed = proving.send(proving.proof("alice", offer), &under);
         assert_eq!(confirmed.status, 200);
-        let member = store
+        let member = proving
+            .store
             .membership("phone/a1")
             .expect("read")
             .member
@@ -5131,7 +5199,7 @@ mod tests {
         };
         let alice = Some(("alice".to_string(), "a1".to_string()));
         {
-            let judged = host.judged.lock().expect("held");
+            let judged = proving.host.judged.lock().expect("held");
             let (judgement, carried) = judged.last().cloned().expect("the host was told");
             assert!(judgement.confirmed);
             assert_eq!(carried, 0, "a proof is no envelope");
@@ -5140,9 +5208,9 @@ mod tests {
 
         // docs/adr/0116, D1 and D3: every later exchange under the incarnation reaches the host
         // with the person the store holds for it, whatever its body says.
-        let carrying = send(alloc::vec![0x05], &under);
+        let carrying = proving.send(alloc::vec![0x05], &under);
         assert_eq!(carrying.status, 200);
-        let judged = host.judged.lock().expect("held");
+        let judged = proving.host.judged.lock().expect("held");
         let (judgement, carried) = judged.last().cloned().expect("the host was told");
         assert!(!judgement.confirmed);
         assert_eq!(carried, 1);
@@ -5150,6 +5218,89 @@ mod tests {
             person(&judgement),
             alice,
             "read from the store's delegation"
+        );
+    }
+
+    /// A port whose identity provider answers only once the test says it does: until then it
+    /// judges no proof ([`ProofError::Unavailable`]), and then judges as [`TestProof`] does.
+    struct Reached {
+        proofs: TestProof,
+        answers: Arc<AtomicBool>,
+    }
+
+    impl IdentityProof for Reached {
+        fn verify(
+            &self,
+            proof: &[u8],
+            challenge: &Challenge,
+            now_ms: u64,
+        ) -> Result<sce_rust_session_store::Person, ProofError> {
+            if !self.answers.load(Ordering::SeqCst) {
+                return Err(ProofError::Unavailable);
+            }
+            self.proofs.verify(proof, challenge, now_ms)
+        }
+    }
+
+    /// docs/adr/0116, D8, amended 2026-11-28, at the server's edge: an exchange whose proof the
+    /// port could not judge, since its identity provider did not answer, is answered as load shed,
+    /// `503` with `Retry-After`, counted as a shed of the identity provider and as no failed
+    /// authentication; nothing is written and the offer stands, so a later exchange with a good
+    /// proof confirms it. Red if the server answers it `401` as a refusal, or ends the offer.
+    #[test]
+    fn a_proof_the_port_could_not_judge_is_shed_and_the_offer_stands() {
+        let answers = Arc::new(AtomicBool::new(false));
+        let proving = Proving::new(Arc::new(Reached {
+            proofs: TestProof::new(PROOF_KEY, ISSUER, OPEN.name, 60_000),
+            answers: Arc::clone(&answers),
+        }));
+        let offer = proving.join();
+        let under = under_offer(offer);
+
+        let shed = proving.send(proving.proof("alice", offer), &under);
+        assert_eq!(shed.status, 503, "load the server cannot take now");
+        assert_eq!(shed.header("Retry-After"), Some("1"));
+        assert_eq!(shed.header("WWW-Authenticate"), None, "no refusal");
+        assert_eq!(
+            proving.recording.counted(Counter::ServerSheds {
+                reason: ServerShed::IdentityProvider
+            }),
+            1
+        );
+        assert_eq!(
+            proving.recording.counted(Counter::AuthenticationFailures {
+                authenticator: AuthenticatorKind::Key
+            }),
+            0,
+            "no proof was refused"
+        );
+        let membership = proving.store.membership("phone/a1").expect("read");
+        assert!(membership.member.is_none(), "nothing was written");
+        assert_eq!(
+            membership.offer.map(|standing| standing.incarnation),
+            Some(offer),
+            "the offer stands"
+        );
+        assert!(
+            proving.host.judged.lock().expect("held").is_empty(),
+            "nothing reached the host"
+        );
+
+        answers.store(true, Ordering::SeqCst);
+        let confirmed = proving.send(proving.proof("alice", offer), &under);
+        assert_eq!(confirmed.status, 200, "the offer stood for a good proof");
+        let member = proving
+            .store
+            .membership("phone/a1")
+            .expect("read")
+            .member
+            .expect("a member under the offer");
+        assert_eq!(member.incarnation, offer);
+        assert_eq!(
+            member
+                .delegation
+                .map(|delegation| delegation.person.subject),
+            Some("alice".to_string())
         );
     }
 }

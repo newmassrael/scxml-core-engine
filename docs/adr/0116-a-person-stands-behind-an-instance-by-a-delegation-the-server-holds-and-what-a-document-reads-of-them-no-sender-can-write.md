@@ -2,7 +2,8 @@
 
 - Status: Accepted (2026-11-22, by the owner), as amended before it was accepted: a person is bound where an instance
   joins (D2), a revocation is held by the write (D6), and an event of an ended delegation is refused (D6). Its model
-  (D9) was written and checked before any code.
+  (D9) was written and checked before any code. Amended 2026-11-28: a port that could not judge a proof says so, and
+  is answered as unavailable, not as a refusal (D8).
 - Date: 2026-11-22
 - Amended (2026-11-28): decision 3 of "Decided while making a person cost nothing where none is read", as first
   written, contradicted D7 and is replaced; decisions 1, 2, 4 and 5 stand.
@@ -141,6 +142,15 @@ one. Erasing a person is a record of its own (ADR 0114 D8).
 The identity providers and their adapters, the pages a person sees, linking accounts, what a group means, who may do
 what. SCE has the port, the record, the delegation and its store, the conformance kit a proof adapter runs (a proof of
 another challenge, key, audience, issuer, or time, each refused), and a proof for tests that no deployment may name.
+
+**Amended 2026-11-28: a refusal is a judgement of the proof; a provider that did not answer is none.** A port that
+exchanges an OpenID Connect authorization code asks its identity provider, and one that does not answer has judged
+nothing. So the port's error says which (`ProofError`): `Refused`, the proof judged and refused, answered `401` with
+`invalid_proof`; or `Unavailable`, the proof not judged, answered as load the server cannot take now, `503` with
+`Retry-After` (SCE_MESH.md section 22.4), a shed of `identity_provider`. Neither writes anything, and the offer stands
+until `login_ms`, so what the model (D9) holds of a refused proof holds of it. A code is exchanged once (RFC 6749,
+section 4.1.2): the kit judges each proof it is handed once, and a code the provider took before it went silent is
+refused when sent again, after which the person proves anew while the offer stands.
 
 ### D9. The protocol is a model before it is code
 

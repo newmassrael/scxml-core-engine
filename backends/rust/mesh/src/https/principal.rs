@@ -21,6 +21,11 @@
 //!   that moment ([`Edge::confirm`]). So a proof stolen without the key, replayed, or made for
 //!   another instance or another incarnation is refused, and the offer stands until `login_ms` for
 //!   a good one. No later exchange carries a proof or a token: the key's signature is enough.
+//! * **A refusal is a judgement of the proof; a provider that did not answer is none**
+//!   (docs/adr/0116, D8, amended 2026-11-28). A port that could not judge a proof, since the
+//!   identity provider it asks did not answer, says so ([`ProofError::Unavailable`]), and the
+//!   server answers the exchange as load it cannot take now. Nothing is written either way, and the
+//!   offer stands until `login_ms`.
 //!
 //! The proof travels in the body of the exchange that confirms the offer, which the instance's key
 //! signs with `if-match` (SCE_MESH.md section 22.9); the dialing side computes the same challenge
@@ -140,6 +145,44 @@ impl fmt::Display for ProofRefused {
 
 impl std::error::Error for ProofRefused {}
 
+/// Why a port answered no person for a proof (docs/adr/0116, D8): it judged the proof and refused
+/// it, or it could not judge it. Nothing is written either way: the offer stands, until it runs
+/// out, for a proof judged good.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofError {
+    /// The port judged the proof and refused it.
+    Refused(ProofRefused),
+    /// The port could not judge the proof: the identity provider it asks did not answer. This is
+    /// no judgement of the proof, and the exchange is answered as load the server cannot take now.
+    Unavailable,
+}
+
+impl From<ProofRefused> for ProofError {
+    fn from(refused: ProofRefused) -> Self {
+        Self::Refused(refused)
+    }
+}
+
+impl fmt::Display for ProofError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Refused(_) => "the port refused the proof",
+            Self::Unavailable => {
+                "the port could not judge the proof: its identity provider did not answer"
+            }
+        })
+    }
+}
+
+impl std::error::Error for ProofError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Refused(refused) => Some(refused),
+            Self::Unavailable => None,
+        }
+    }
+}
+
 /// The host's port of proofs of a person (docs/adr/0116, D2 and D8): the identity providers and
 /// their adapters are the application's, and each adapter is held to the kit of module
 /// `principal_conformance`. With OpenID Connect the server's program is the confidential client
@@ -147,13 +190,15 @@ impl std::error::Error for ProofRefused {}
 pub trait IdentityProof: Send + Sync {
     /// The person `proof` proves, when it is a proof the port trusts, made for `challenge` and
     /// for this server's audience, and good at `now_ms`: their issuer and subject, when and how they
-    /// proved it.
+    /// proved it. Otherwise why it answers none: [`ProofError::Refused`] when it judged the proof
+    /// and refused it, and [`ProofError::Unavailable`] only when it could not judge it, as when the
+    /// identity provider it exchanges a code with does not answer.
     fn verify(
         &self,
         proof: &[u8],
         challenge: &Challenge,
         now_ms: u64,
-    ) -> Result<Person, ProofRefused>;
+    ) -> Result<Person, ProofError>;
 }
 
 /// What a deployment holds the people behind its instances to (docs/adr/0116, D2 and D6). Neither
@@ -189,6 +234,10 @@ pub enum Proved {
     /// The port refused the proof: nothing was written, and the offer stands, until it runs out,
     /// for a good one.
     Refused(ProofRefused),
+    /// The port could not judge the proof (docs/adr/0116, D8): the identity provider it asks did
+    /// not answer. Nothing was written, and the offer stands, until it runs out, for a proof
+    /// judged good.
+    Unavailable,
 }
 
 /// The edge of a server machine whose open machine's instances act for people: the store its
@@ -223,11 +272,11 @@ impl<S: MembershipStore + ?Sized, P: IdentityProof + ?Sized> Edge<'_, S, P> {
     }
 
     /// Judge `exchange` at `now_ms`: the port judges its proof against the challenge of the offer it
-    /// names, made with the key that signed it, and refuses it or answers the person; the store
-    /// then judges the exchange, binding that person to the incarnation it confirms until
-    /// `person_ttl_ms` from `now_ms` (docs/adr/0116, D2 and D6). An exchange that names the member's own
-    /// incarnation, a confirmation repeated, is an exchange under it, which changes whom it acts
-    /// for in nothing.
+    /// names, made with the key that signed it, and refuses it, answers that it could not judge it
+    /// (D8), or answers the person; the store then judges the exchange, binding that person to the
+    /// incarnation it confirms until `person_ttl_ms` from `now_ms` (docs/adr/0116, D2 and D6). An
+    /// exchange that names the member's own incarnation, a confirmation repeated, is an exchange
+    /// under it, which changes whom it acts for in nothing.
     pub fn confirm(&self, exchange: &Confirming<'_>, now_ms: u64) -> Result<Proved, Failure> {
         let challenge = Challenge::of(&Offering {
             server: self.server,
@@ -238,7 +287,8 @@ impl<S: MembershipStore + ?Sized, P: IdentityProof + ?Sized> Edge<'_, S, P> {
         });
         let person = match self.port.verify(exchange.proof, &challenge, now_ms) {
             Ok(person) => person,
-            Err(refused) => return Ok(Proved::Refused(refused)),
+            Err(ProofError::Refused(refused)) => return Ok(Proved::Refused(refused)),
+            Err(ProofError::Unavailable) => return Ok(Proved::Unavailable),
         };
         let delegation = Delegation {
             person,
@@ -431,6 +481,61 @@ mod tests {
             (ISSUER, "alice")
         );
         assert_eq!(delegation.until_ms, 25_000, "person_ttl_ms from the proof");
+    }
+
+    /// A port whose identity provider does not answer: it judges no proof.
+    struct Unanswered;
+
+    impl IdentityProof for Unanswered {
+        fn verify(&self, _: &[u8], _: &Challenge, _: u64) -> Result<Person, ProofError> {
+            Err(ProofError::Unavailable)
+        }
+    }
+
+    /// docs/adr/0116, D8, amended 2026-11-28: a proof the port could not judge is no refusal of
+    /// it. The edge answers that the port could not judge it and writes nothing, and the offer
+    /// stands for a proof judged good. Red if the edge reads a port's `Unavailable` as a
+    /// refusal, or binds anyone on it.
+    #[test]
+    fn a_proof_the_port_could_not_judge_writes_nothing_and_the_offer_stands() {
+        let store = MemoryStore::new();
+        let unanswered = Edge {
+            store: &store,
+            port: &Unanswered,
+            server: SERVER,
+            terms: TERMS,
+            login: LOGIN,
+        };
+        let offered = unanswered.join("phone", "a1", "n1", 100).expect("a join");
+        let good = proof("alice", &offering("key-a", offered.incarnation), 200);
+        assert_eq!(
+            unanswered
+                .confirm(&confirming(offered.incarnation, &good), 200)
+                .expect("judged"),
+            Proved::Unavailable
+        );
+        let membership = store.membership("phone/a1").expect("reading");
+        assert!(membership.member.is_none(), "nothing was written");
+        assert!(membership.offer.is_some(), "the offer stands");
+
+        let port = port();
+        let answering = Edge {
+            store: &store,
+            port: &port,
+            server: SERVER,
+            terms: TERMS,
+            login: LOGIN,
+        };
+        assert_eq!(
+            answering
+                .confirm(&confirming(offered.incarnation, &good), 300)
+                .expect("judged"),
+            Proved::Judged(Admission::Confirmed {
+                mark: 1,
+                ended: None
+            }),
+            "the offer stood for the proof once the port could judge it"
+        );
     }
 
     /// docs/adr/0116, D6 (docs/formal/Principals.tla, `without_condition`): a run whose write comes
