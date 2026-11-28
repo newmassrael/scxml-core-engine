@@ -1,4 +1,4 @@
-# ADR 0146 — A bounded FIFO declares what it does when full: it refuses, drops the newest or evicts the oldest, and an element it does not deliver goes back to the push that lost it
+# ADR 0157 — A bounded FIFO declares what it does when full: it refuses, drops the newest or evicts the oldest, and an element it does not deliver goes back to the push that lost it
 
 - Status: Accepted (2026-11-28) by the owner, after the consumer read the revision and raised no objection. Proposed
   2026-11-26; revised 2026-11-28 on the consumer's review, whose twelve items are each taken (section "Review", which
@@ -8,10 +8,13 @@
   algorithm argued only by hand serves no document until a machine check promotes it, `lost` is linearizable, and a
   close stays declared on type precision alone (section "Review", "The owner's audit").
 - Date: 2026-11-26
+- Numbered 0146 when first written; renumbered on 2026-11-28 because that number also named ADR 0146, "A formal
+  judge is one command of the code generator, which every repository runs on its own manifest at the revision it
+  pins, this one included", which records outside this repository cite.
 - Reopens: ADR 0062 §1, the cell *consumed once x forget the oldest*, and the third bullet of ADR 0062 §8
   ("Overwrite of a consumed queue ... not revisited"), on a reason §1 did not weigh (§"Why ADR 0062's refusal is
   reopened").
-- Amends, once landed (each amended document gains an "Amended by: ADR 0146" line in the landing that moves it):
+- Amends, once landed (each amended document gains an "Amended by: ADR 0157" line in the landing that moves it):
   - RFC §synth-5-P (`queue`): a declared full policy and fullness, a close, a drain, a declared sharing, storage the
     caller lends, the outcomes of a push and a pop, the selection table's two new rows and the candidates that may join
     it, the waiting protocol, and its bullets "Overwriting the oldest element is excluded" and "Elements still queued

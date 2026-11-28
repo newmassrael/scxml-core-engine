@@ -15,7 +15,7 @@
 - Related: ADR 0050 (a bound read by name), ADR 0056 (buffers are the document's size), ADR 0067 (a table row is as
   small as its numbers), ADR 0077 (a declared bound is part of a type and every decode refuses what breaks it), ADR
   0092 §12 (every constructor of the type grammar is held on every lane), ADR 0133 (one classification of a failure),
-  ADR 0148 (the pin of Unicode and CLDR, D6, and the code of its D8).
+  ADR 0158 (the pin of Unicode and CLDR, D6, and the code of its D8).
 
 ## Context
 
@@ -87,7 +87,7 @@ When the second argument of `matches` or `search` is a string literal, the build
 
 1. reads it by RFC 9485's grammar, refusing a text that is not an I-Regexp as **`expression/invalid-pattern`** at the
    offset where the grammar stops;
-2. expands each class from the pinned Unicode data (ADR 0148 D6), so a pattern and a normalisation in one build read
+2. expands each class from the pinned Unicode data (ADR 0158 D6), so a pattern and a normalisation in one build read
    one Unicode version;
 3. builds Thompson's automaton over UTF-8 bytes, makes it deterministic and minimal (for `search`, the automaton of
    any text, then the language, then any text), and refuses a pattern whose minimal automaton has more states than the
@@ -128,7 +128,7 @@ data are `icu_properties`' at the pin.
 
 - **`nfc(t)`**, for `t` a `string[B]`, is the NFC of `t` (UAX #15), a `string[3B]`: UAX #15's bound on the growth
   of NFC in UTF-8 makes it total. **`is_nfc(t)`** is whether `t` is in NFC. Both read the pinned Unicode version
-  (ADR 0148 D6) through `icu_normalizer`'s composing normaliser.
+  (ADR 0158 D6) through `icu_normalizer`'s composing normaliser.
 - **Where it is used is the document's.** utf8_length's advice stands: normalise at the boundary where the text
   enters, before a cap is checked or a key is made. Its comment is amended: normalisation is now a vocabulary operation
   of the lanes of D6, over data the build pins, and still not a document.
@@ -136,13 +136,13 @@ data are `icu_properties`' at the pin.
   equivalence writes `nfc(a) === nfc(b)`. Nothing is normalised without being asked: a decoded text keeps its bytes,
   which a signature or a digest may cover.
 - **A change of pin is a change of answer only for code points the earlier pin did not assign** (UAX #15's stability
-  policy); ADR 0148 D6 makes the change deliberate.
+  policy); ADR 0158 D6 makes the change deliberate.
 
 ### D6. Lanes
 
 `matches`, `search`, `pattern[N]`, `nfc` and `is_nfc` are built for Rust, native and wasm32. A build for any
 other backend, and the Interpreter's lowering, of a machine or an algorithm that uses one is refused by name with
-`codegen/text-facility-not-served` (ADR 0148 D8). A build-time automaton is data any backend can print; a lane
+`codegen/text-facility-not-served` (ADR 0158 D8). A build-time automaton is data any backend can print; a lane
 joins by printing it and its walk, and the simulation and the normalisation with its runtime, in the change that lands
 its tests.
 
@@ -199,7 +199,7 @@ its tests.
 Each step lands with a test that fails without it.
 
 1. This record, accepted.
-2. **The pin** (ADR 0148, step 2), if that record has not landed it.
+2. **The pin** (ADR 0158, step 2), if that record has not landed it.
 3. **`sce-rust-pattern`: the grammar, the construction and the simulation (D3, D4).** Tests:
    `an_iregexp_is_read_by_rfc_9485s_grammar` (the RFC's examples and refusals);
    `a_pattern_agrees_with_the_regex_crate_on_every_short_text` (D7, second item);
@@ -246,4 +246,4 @@ Decided here, each with its reason; the acceptance may overturn any.
 - RFC 3629, UTF-8.
 - Unicode Standard Annex #15, Unicode Normalization Forms, and `NormalizationTest.txt` of the Unicode Character
   Database; Unicode Technical Standard #18, Unicode Regular Expressions.
-- ADR 0050, ADR 0067, ADR 0077, ADR 0092, ADR 0133, ADR 0148 in this repository.
+- ADR 0050, ADR 0067, ADR 0077, ADR 0092, ADR 0133, ADR 0158 in this repository.

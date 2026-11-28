@@ -1,10 +1,13 @@
-# ADR 0148 — A message is a case of a union declared beside the logic that raises it, a catalog per language holds it in MessageFormat 2 and is checked when generated, and only the host formats it, over pinned Unicode and CLDR data
+# ADR 0158 — A message is a case of a union declared beside the logic that raises it, a catalog per language holds it in MessageFormat 2 and is checked when generated, and only the host formats it, over pinned Unicode and CLDR data
 
 - Status: Proposed (2026-11-27), for the owner's acceptance. Written under the owner's standing rule: the most
   long-term correct structure, textbook in its foundations, cost ignored; decided, not asked. Each open question is
   decided below by the textbook rule, and the acceptance may overturn any of them.
 - Date: 2026-11-27
-- Amends, once accepted (each amended document gains an "Amended by: ADR 0148" line in the landing that moves it):
+- Numbered 0148 when first written; renumbered on 2026-11-28 because that number also named ADR 0148, "A machine
+  whose document leaves Appendix D's main loop one step per event takes a reactive turn", an accepted record the
+  runtimes' code cites.
+- Amends, once accepted (each amended document gains an "Amended by: ADR 0158" line in the landing that moves it):
   `docs/SCE_ACCEPTED_SUBSET.md` §2.1 (a thirtieth kind, `message-catalog`) and its appendix (the codes of D3 and D8);
   `SCE_ERROR_CONTRACT.md` (the same codes); `docs/SCE_HOST_FEATURES.md` (a new section 16, formatting at the edge,
   D5); the comment of `stdlib/text/utf8_length.scxml` that says Unicode's tables are carried into no backend (D6).

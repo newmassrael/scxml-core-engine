@@ -7,7 +7,7 @@
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0150" line in the landing that moves it):
   `docs/SCE_HOST_FEATURES.md` section 1 (a host repeats an operation only as its request states, D6), section 5 (the
   named bounds, D1; the new operation, D3 to D6), sections 7 to 9 (the lanes, the scenarios, what is not provided), and
-  two new sections, blobs (D2) and outbound credentials (D5), numbered after ADR 0148's section 16;
+  two new sections, blobs (D2) and outbound credentials (D5), numbered after ADR 0158's section 16;
   `stdlib/host/http_fetch_request.scxml` and `http_fetch_result.scxml` (D1); ADR 0109 Open question 7 (a store of
   blobs now exists; signing one stays a record of its own).
 - Scope: the contract names no language. D1 changes two records every lane's reference host serves, so it lands on
