@@ -4342,46 +4342,36 @@ of an algorithm that holds a map changes where it is generated again (below).
 Landing: the commits that add this section. No committed generated tree changes; a consumer that generates a
 buffer pool regenerates it, and one that drives a generated pool by hand changes its calls as below.
 
-- **Rust.** Every transition takes `&self`: a call that passed `&mut pool` passes `&pool`. `pool_acquire_for_encode()`
-  is `pool_acquire_for_encode(len, headroom)` and `link_arm_rx()` is `link_arm_rx(len)`, each answering
-  `Result<Slot<_>, LendRefused>` where it answered `Option`; the pool's whole slot with no headroom is
-  `pool.pool_acquire_for_encode(pool.slot_len(), 0)`, refused only as `LendRefused::Exhausted`. `Slot::read` and
-  `Slot::write` hand out a slice of the lent length less its headroom, where they handed out `[u8; SLOT_SIZE]`.
-  `link_arm_tx(pool)` is `link_arm_tx(pool, frame)`, the bytes of the frame written, and answers
-  `Result<SlotIndex, Slot<CpuMut>>`. `Slot::idx() -> usize` is `Slot::index() -> SlotIndex`, whose `slot` is the
-  position `slot_state` and the position-keyed seam take. The pool type is `Pool<St = Owned>`: `Pool::new()` is a
-  `const fn` of every slot, and `Pool::with_count(count)` and `Pool::over(bytes, count, len)` make one of a run-time
-  count over its own storage or the caller's. `SlotIndex`, `into_index`, `reclaim`, `take_prefixed`, `lend`, `hold`,
-  `release` and `lent` are new. A `shared` pool on a target with no compare-and-swap needs the `critical-section`
-  crate.
-- **C11.** `<pool>_pool_acquire_for_encode()` is `<pool>_pool_acquire_for_encode(len, headroom)`,
-  `<pool>_link_arm_rx()` is `<pool>_link_arm_rx(len)` and `<pool>_link_arm_tx(&h)` is `<pool>_link_arm_tx(&h, frame)`;
-  `<pool>_slot_len()` and `<pool>_slot_capacity(&h)` give the lengths a caller passes and reads back. The state array
-  `<pool>_slot_states` is gone, and `<pool>_slot_state(i)` reads a slot's state. `<pool>_init`, `<pool>_init_over`,
-  `<pool>_slot_index_t`, `<pool>_slot_index`, `<pool>_into_index`, `<pool>_reclaim`, `<pool>_take_prefixed`,
-  `<pool>_lend`, `<pool>_hold`, `<pool>_release` and `<pool>_lent` are new. Defining `<POOL>_CALLER_STORAGE` before
-  the include drops the pool's own storage. A `shared` pool links the `sce_atomic_*` intrinsics, or
-  `_sce_critical_enter` and `_sce_critical_exit` on a target with no compare-and-swap.
-- A link's generated `send` takes its transmit pool by `&` (Rust) and lends at the pool's slot length.
-- **What stays as it was: a pool that lends nothing.** The calls above are a lending pool's. A pool lends at run time
-  when its document says `<sce:lending>run-time</sce:lending>` (a new element, `fixed` by default) or
-  `<sce:sharing>shared</sce:sharing>`; an `owner` pool with a fixed count of slots over its own storage that says
-  neither has the layout and the function bodies it had before the book: one state byte per slot beside the
-  slots, a handle that is the slot's number, and no book, generation, run-time count or length. In Rust that is the
-  pool over `Owned`: `new()` (now a `const fn`), `pool_acquire_for_encode()` and `link_arm_rx()` answering
-  `Option`, `&mut` transitions, `Slot::idx()`, and `read`/`write` of `[u8; SLOT_SIZE]`; a call written before the
-  lending compiles unchanged. A pool over the caller's storage, `Pool::over`, lends at run time in any document. A
-  consumer that adopted the lent calls on a pool over its own storage adds `<sce:lending>run-time</sce:lending>` to the
-  pool's document, and its calls compile as they did.
-- **Rust.** `Slot` is `Slot<S, G>`: `G` is `u32`, the generation, for a slot of a lending pool and `()` for one of a
-  pool that lends nothing, and defaults to the handle of the pool over its own storage, so `Slot<CpuMut>` names it as
-  before in either document; a handle of `Pool::over` in a document that lends nothing is `Slot<CpuMut, u32>`.
-  `Pool<St = Owned>` is `Pool<St: Storage = Owned>`: `Storage` (implemented for every `SlotStore`) names what the
-  pool keeps, its `Book` and its `Generation`; a type that implements `SlotStore` needs nothing more. `LENDING`
-  round-trips `<sce:lending>`. A link's `send` takes a pool that lends nothing by `&mut` and lends a slot whole, as
-  before the lending.
-- **C11.** `<POOL>_LENDS` is 1 for a lending pool and 0 for one that lends nothing, and `<POOL>_LENDING` round-trips
-  `<sce:lending>`. A pool that lends nothing keeps `<pool>_slot_states` and the calls without a length,
-  `<pool>_pool_acquire_for_encode(void)`, `<pool>_link_arm_rx(void)` and `<pool>_link_arm_tx(&h)`, and declares no
-  `_init`, `_init_over`, `_slot_len`, `_slot_capacity` or index; a link's send encodes into `<POOL>_SLOT_SIZE` bytes
-  of it.
+- **The storage type decides what a pool keeps** (ADR 0111 D4, the rule ADR 0154 gave a map). The pool over its own
+  storage (Rust `Pool<Owned>`, C11 the header's static pool) keeps the layout, the function bodies and the calls it
+  had before the lending: one state byte per slot, a handle that is the slot's number, `pool_acquire_for_encode()`
+  and `link_arm_rx()` answering `Option` (C11: an invalid handle), `&mut` transitions, `Slot::idx()`, and
+  `read`/`write` of `[u8; SLOT_SIZE]`; `Pool::new()` is now a `const fn`. A call written before the lending compiles
+  unchanged. Only the lending type keeps the book and the generation, and no document declares which: one document
+  gives both. A `shared` pool's own storage keeps the atomic book (below).
+- **Rust, the lending type `Pool<Over<'a>>`.** `Pool::over(bytes, count, len)` makes it, over a `&'static mut` buffer
+  the program owns as over any span. Every transition takes `&self`; `pool_acquire_for_encode(len, headroom)` and
+  `link_arm_rx(len)` answer `Result<Slot<_, u32>, LendRefused>`; `read` and `write` hand out a slice of the lent
+  length less its headroom; `link_arm_tx(pool, frame)` answers `Result<SlotIndex, Slot<CpuMut, u32>>`; and
+  `Slot::index()`, `SlotIndex`, `into_index`, `reclaim`, `take_prefixed`, `lend`, `hold`, `release` and `lent` are
+  its. `Slot` is `Slot<S, G>`, `G` the lending's generation, `u32`, or `()` for the pool over its own storage, which
+  is the default, so `Slot<CpuMut>` names the handle it named before. `Pool<St = Owned>` is `Pool<St: Storage = Owned>`:
+  `Storage`, implemented for every `SlotStore`, names the pool's `Book` and `Generation`. A consumer that adopted the
+  first landing's lent calls on `Pool::new()` makes its pool `over` a buffer, and its calls compile as they did.
+- **Rust, `shared`.** The pool over its own storage keeps the atomic book: `Owned` is a `SlotStore`, its transitions
+  take `&self`, `with_count` makes it of a run-time count, and its handle carries the generation. On a target with no
+  compare-and-swap it needs the `critical-section` crate.
+- **C11, the lending type `<pool>_over_t`.** `<pool>_init_over(&pool, bytes, len, count, slot_len)` makes it, and every
+  function of it takes it first and is named `<pool>_over_<op>`: `_over_pool_acquire_for_encode(&pool, len, headroom)`,
+  `_over_link_arm_rx(&pool, len)`, `_over_link_arm_tx(&pool, &h, frame)`, `_over_count`, `_over_slot_len`,
+  `_over_slot_capacity`, `_over_slot_index`, `_over_into_index`, `_over_reclaim`, `_over_take_prefixed`, `_over_lend`,
+  `_over_hold`, `_over_release`, `_over_lent` and the seam and address functions. The header's static pool keeps
+  `<pool>_slot_states` and the calls before the lending. The first landing's `<pool>_init`, `<POOL>_CALLER_STORAGE` and
+  the static pool's lent calls are gone: storage the caller holds is a `<pool>_over_t`.
+- **C11, `shared`.** The static pool is a `<pool>_over_t` over the header's storage, its words atomic, behind the calls
+  before the lending: `<pool>_pool_acquire_for_encode(void)` lends a whole slot. It links the `sce_atomic_*`
+  intrinsics, or `_sce_critical_enter` and `_sce_critical_exit` on a target with no compare-and-swap.
+- **Links.** A Rust link's `send` is `send<TxP: pool::TxPool>(&mut self, tx_pool: TxP, event)`: `&mut pool` for the
+  pool over its own storage, as before the lending, and `&pool` for a lending one. A C11 link's
+  `<link>_send_<row>(self, value)` encodes into the static pool's whole slot as before, and
+  `<link>_send_<row>_over(self, &pool, value)` into a `<pool>_over_t`.

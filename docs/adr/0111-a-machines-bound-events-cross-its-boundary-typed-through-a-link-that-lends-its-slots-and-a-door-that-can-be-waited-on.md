@@ -276,7 +276,7 @@ unchanged. The generated Rust and C11 pools gain:
 - **Storage the caller holds.** A pool may own its storage, as today, or be made over storage the caller holds
   (ADR 0082) and sized at run time: `Pool::over(bytes, c, l)` takes a span of at least `c * l` bytes (aligned as the
   pool declares) and the count and length it is cut into, each within the build bounds, and the book of `B` entries
-  stays the pool's own (C11: `<pool>_init_over(bytes, len, c, l)`). A deployment that sizes its arena by a negotiated
+  stays the pool's own (C11: `<pool>_init_over(&pool, bytes, len, c, l)` on a `<pool>_over_t`). A deployment that sizes its arena by a negotiated
   length lends exactly what it negotiated, and the span is refused at construction when it is short or misaligned.
 - **An empty pool is all zero.** The constructor is a `const fn` (C11: a static initializer), and a pool with no slot
   out is all zero bytes (state `free` is 0, generation 0), so a `static` pool lies in `.bss`, as ADR 0108 made an
@@ -289,7 +289,7 @@ unchanged. The generated Rust and C11 pools gain:
 - **A slot index that crosses an interface.** A lent slot has a `SlotIndex`: the slot's number and its generation, a
   `u32` each, `Copy`, `repr(C)` in Rust and a plain struct in C11. The generation is incremented each time the
   slot returns to `free`. Generated code holds the typestate handle (`Slot<S>`); the index crosses a trait object
-  or a C ABI. `pool.reclaim::<S>(index)` (C11: `<pool>_reclaim(index, state)`) rebuilds the handle if the slot is in
+  or a C ABI. `pool.reclaim::<S>(index)` (C11: `<pool>_over_reclaim(&pool, index, state)`) rebuilds the handle if the slot is in
   state `S` and its generation is the index's, and refuses otherwise: a stale or forged index is counted as an
   ownership violation (`pool/ownership-violation`) and yields nothing. `Slot::idx()` becomes `Slot::index()`.
 - **A shared book.** Every transition takes `&self`; the pool's state book is interior-mutable. A pool declares how
@@ -305,19 +305,23 @@ unchanged. The generated Rust and C11 pools gain:
   hold count counts the events that hold it and the outputs that borrow from it (a subscriber's delivery handed out
   after the step, D5), and the slot returns when the count falls to zero: when the last event's macrostep has
   completed and every output that borrows it has been released by the host that ran it.
-- **A pool that does not lend pays for none of it.** A pool declares whether it lends at run time,
-  `<sce:lending>fixed</sce:lending>` (the default) or `run-time`; a `shared` pool lends whatever it declares, since
-  a state per slot cannot be shared. The book, the generation, the run-time count and length, the headroom, the
-  index and the lent holds are a lending pool's alone, by the rule ADR 0154 gave a map (`MapStorage::Generation` is
-  `u32` in lent storage and `()` in a map's own). An `owner` pool with a fixed count of slots over its own storage
-  that declares no lending keeps the layout and the code it had before the book: one state byte per slot beside the
-  slots, a handle that is the slot's number, a lending that names no length, and transitions that take `&mut`. In
-  Rust the storage decides it: `Storage` gives `Owned` the state array and `Generation = ()` in such a document,
-  and `Over<'a>` (and `Owned` in a lending document) the book and `Generation = u32`; `Slot<S, G>` carries `G`,
-  defaulting to the handle of the pool over its own storage, and `SlotIndex`, `into_index`, `reclaim` and the rest
-  are the lending pool's. In C11 the one static pool is the one or the other by the document (`<POOL>_LENDS`), and
-  the header of a pool that does not lend has no `_init`, `_init_over`, book, generation or index. A link that
-  encodes into a pool calls it the way the pool lends.
+- **The storage type decides what a pool keeps.** By the rule ADR 0154 gave a map (`MapStorage::Generation` is
+  `u32` in lent storage and `()` in a map's own), the book, the generation, the run-time count and length, the
+  headroom, the index and the lent holds belong to a pool over storage the caller holds, and the pool over its own
+  storage keeps the layout and the code it had before the book: one state byte per slot beside the slots, a handle
+  that is the slot's number, a lending that names no length, and transitions that take `&mut`. No document declares
+  it; one document gives both types. In Rust, `Storage` gives `Owned` the state array and `Generation = ()` and every
+  `SlotStore` (`Over<'a>`) the book and `Generation = u32`; `Slot<S, G>` carries `G`, defaulting to the handle of
+  the pool over its own storage, and `SlotIndex`, `into_index`, `reclaim` and the rest are `Pool<Over<'_>>`'s. A
+  program that owns storage whose slots must cross an interface by index makes `Pool::over` over a `&'static mut`
+  buffer. In C11 the header gives both: the pool over its own storage, the static one, with the functions it had
+  before the book, and `<pool>_over_t` with `<pool>_init_over` and `<pool>_over_*`; both are `static inline`, so the
+  one a program does not call costs it nothing. `<sce:sharing>shared` alone changes the pool over its own storage: a
+  driver context moves its slots too, which one state per slot cannot be shared with, so its state is the atomic book
+  (Rust: `Owned` is a `SlotStore`; C11: the static pool is a `<pool>_over_t` over the header's storage behind the
+  calls it had before the book). A link's send takes its transmit pool as its type lends: Rust through the pool's
+  `TxPool` (`&mut` the pool over its own storage, `&` the lending type), C11 by two sends, `<link>_send_<row>` and
+  `<link>_send_<row>_over`.
 
 The `queue` kind takes the run-time capacity by the same rule: `CAPACITY` is the bound, and a queue is constructed
 with `c <= CAPACITY`, refused otherwise. Its full policy is unchanged (U17 is a record of its own).
@@ -453,9 +457,10 @@ The supported way for a build outside this repository to generate code is the `s
    them. The queue's run-time capacity has not landed. Amended (2026-11-28): the first landing made every pool lend,
    and a consumer measured what an MCU pool that lends nothing then paid (C11 at `-Os`: a pool's text from 820 to 2914
    bytes, its state from a byte per slot to a 24-byte line; Rust: a 4-byte handle grew to 8 on a 32-bit target, and
-   every lending checked a run-time length and stored a book line). `<sce:lending>` now decides it: a pool that
-   declares neither `run-time` nor `shared` keeps the layout and the code it had before the book, and the contract
-   runs against the lending pools while each arm holds `pool_conformance_fixed` to that layout.
+   every lending checked a run-time length and stored a book line). The storage type now decides it, as a map's does
+   (ADR 0154): the pool over its own storage keeps the layout and the code it had before the book, and only the
+   lending type, `Over` and `<pool>_over_t`, keeps the book and the generation. The contract runs against each pool's
+   lending type, and each arm holds the pool over its own storage to that layout.
 3. The link's transmit side (D3): stages, open, append and arm with their outcomes, the take order, the lending
    `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures of
    `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link.
