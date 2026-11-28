@@ -392,7 +392,7 @@ where
             return;
         }
         let receipt = Receipt::new(Fate::Pending);
-        let input = Input::Followed(Followed {
+        let input = Input::Followed(Box::new(Followed {
             journal: open.journal.clone(),
             position,
             event: open.event.clone(),
@@ -400,7 +400,7 @@ where
             origin: open.origin.clone(),
             receipt: receipt.clone(),
             counted: true,
-        });
+        }));
         match self.post_followed(&key, input, pass.out.get(&key)) {
             Ok(slot) => {
                 if let Some(open) = reader.open.get_mut(&position) {

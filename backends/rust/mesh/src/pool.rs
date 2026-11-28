@@ -567,8 +567,9 @@ enum Input {
     /// An expiry noted an envelope the session sent that its client never acknowledged
     /// (docs/adr/0109, D10): read the session's notes and tell its machine.
     Notes,
-    /// An entry of a journal the machine follows (docs/adr/0114, D4; module `follow`).
-    Followed(follow::Followed),
+    /// An entry of a journal the machine follows (docs/adr/0114, D4; module `follow`); boxed, so
+    /// that an inbox's inputs stay the size of an envelope.
+    Followed(Box<follow::Followed>),
 }
 
 impl Input {
