@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass, LinkModel,
-    PoolLending, PoolSharing, ReassemblyConfig,
+    PoolSharing, ReassemblyConfig,
 };
 use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc};
 
@@ -101,7 +101,6 @@ fn reassembly_pool(name: &str, slot_count: u32, per_peer_quota: u32) -> BufferPo
         dma_channel: None,
         cache_policy: CachePolicy::None,
         sharing: PoolSharing::Owner,
-        lending: PoolLending::Fixed,
         variant: BufferPoolVariant::Reassembly(ReassemblyConfig {
             max_fragments_per_message: 8,
             reassembly_timeout_ms: 100,

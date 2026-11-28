@@ -40,14 +40,6 @@ const TX_POOL: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
   <sce:cache-policy>none</sce:cache-policy>
 </scxml>"##;
 
-/// The same transmit pool, lending at run time (docs/adr/0111 D4).
-fn lending_tx_pool() -> String {
-    TX_POOL.replace(
-        "  <sce:cache-policy>none</sce:cache-policy>\n",
-        "  <sce:cache-policy>none</sce:cache-policy>\n  <sce:lending>run-time</sce:lending>\n",
-    )
-}
-
 /// A link named `udp_scout` with `body` after its framer import, its class,
 /// its framer and its policy.
 fn link(body: &str) -> String {
@@ -81,14 +73,9 @@ const OUTBOUND_THROUGH_POOL: &str = r##"  <sce:import as="scout_tx_pool" src="sc
   </sce:events>"##;
 
 fn generate(body: &str, lang: Language) -> Result<String, ForgeError> {
-    generate_with_pool(body, lang, TX_POOL)
-}
-
-/// As [`generate`], with `pool` as the transmit pool's document.
-fn generate_with_pool(body: &str, lang: Language, pool: &str) -> Result<String, ForgeError> {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("scout_frame_codec.scxml"), FRAMER).expect("write framer");
-    fs::write(dir.path().join("scout_tx_pool.scxml"), pool).expect("write pool");
+    fs::write(dir.path().join("scout_tx_pool.scxml"), TX_POOL).expect("write pool");
     compile(&link(body), lang, dir.path())
 }
 
@@ -176,36 +163,22 @@ fn rust_transmit_path_encodes_into_a_buffer_of_the_largest_encoding() {
     );
 }
 
-/// A pool that keeps a state per slot (docs/adr/0111 D4) is taken by `&mut`
-/// and lends a slot whole, as a link's send did before the book.
+/// docs/adr/0111 D4: a send takes its transmit pool by the pool's `TxPool`, so
+/// the storage's type decides how: `&mut` the pool over its own storage, `&`
+/// one that lends at run time. The link's document says nothing of it.
 #[test]
 fn rust_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
     let body =
         generate(OUTBOUND_THROUGH_POOL, Language::Rust).expect("rust link with a transmit pool");
     assert_has(
         &body,
-        "pub fn send(&mut self, tx_pool: &mut super::scout_tx_pool::ScoutTxPool, event: &UdpScoutOutbound)",
+        "pub fn send<TxP: super::scout_tx_pool::TxPool>(&mut self, mut tx_pool: TxP, event: &UdpScoutOutbound)",
     );
-    assert_has(&body, ".pool_acquire_for_encode()");
+    assert_has(&body, ".tx_acquire()");
     assert_has(&body, ".ok_or(UdpScoutSendError::PoolExhausted)?;");
-    assert_has(&body, "SliceSink::new(&mut slot.write(tx_pool)[..])");
-    assert_has(&body, "slot.pool_return(tx_pool);");
-}
-
-/// A pool that lends at run time (docs/adr/0111 D4) is taken by `&` and lends a
-/// slot of its slot length.
-#[test]
-fn rust_transmit_path_lends_a_slot_of_a_lending_pool() {
-    let body = generate_with_pool(OUTBOUND_THROUGH_POOL, Language::Rust, &lending_tx_pool())
-        .expect("rust link with a lending transmit pool");
-    assert_has(
-        &body,
-        "pub fn send(&mut self, tx_pool: &super::scout_tx_pool::ScoutTxPool, event: &UdpScoutOutbound)",
-    );
-    assert_has(&body, ".pool_acquire_for_encode(tx_pool.slot_len(), 0)");
-    assert_has(&body, ".map_err(|_| UdpScoutSendError::PoolExhausted)?;");
-    assert_has(&body, "SliceSink::new(&mut slot.write(tx_pool)[..])");
-    assert_has(&body, "slot.pool_return(tx_pool);");
+    assert_has(&body, "SliceSink::new(tx_pool.tx_room(&mut slot))");
+    assert_has(&body, "TxFrame::new(&tx_pool.tx_bytes(&slot)[..length])");
+    assert_has(&body, "tx_pool.tx_return(slot);");
 }
 
 #[test]
@@ -308,13 +281,13 @@ fn c11_transmit_path_encodes_into_a_buffer_of_the_largest_encoding() {
     );
 }
 
-/// A pool that keeps a state per slot (docs/adr/0111 D4) lends a slot whole of
-/// the build's size, as a link's send did before the book.
 #[test]
 fn c11_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
     let body =
         generate(OUTBOUND_THROUGH_POOL, Language::C11).expect("c11 link with a transmit pool");
     assert_has(&body, "#include \"scout_tx_pool.h\"");
+    // docs/adr/0111 D4: the pool over the header's own storage lends a slot
+    // whole, as a send did before the book.
     assert_has(&body, "slot = scout_tx_pool_pool_acquire_for_encode();");
     assert_has(&body, "result.pool_exhausted = true;");
     assert_has(
@@ -322,19 +295,20 @@ fn c11_transmit_path_encodes_into_a_slot_of_the_transmit_pool() {
         "scout_tx_pool_slot_write(&slot), SCOUT_TX_POOL_SLOT_SIZE, &length);",
     );
     assert_has(&body, "(void)scout_tx_pool_pool_return(&slot);");
-}
-
-/// A pool that lends at run time (docs/adr/0111 D4) lends a slot of its slot
-/// length and reads back the room the lending holds.
-#[test]
-fn c11_transmit_path_lends_a_slot_of_a_lending_pool() {
-    let body = generate_with_pool(OUTBOUND_THROUGH_POOL, Language::C11, &lending_tx_pool())
-        .expect("c11 link with a lending transmit pool");
+    // A pool of the lending type over the caller's storage has a send of its
+    // own, chosen by the pool's type rather than a declaration.
     assert_has(
         &body,
-        "slot = scout_tx_pool_pool_acquire_for_encode(scout_tx_pool_slot_len(), 0u);",
+        "static inline udp_scout_send_result_t udp_scout_link_send_scout_query_send_over(",
     );
-    assert_has(&body, "result.pool_exhausted = true;");
-    assert_has(&body, "scout_tx_pool_slot_capacity(&slot), &length);");
-    assert_has(&body, "(void)scout_tx_pool_pool_return(&slot);");
+    assert_has(&body, " *self, scout_tx_pool_over_t *pool, const ");
+    assert_has(
+        &body,
+        "slot = scout_tx_pool_over_pool_acquire_for_encode(pool, scout_tx_pool_over_slot_len(pool), 0u);",
+    );
+    assert_has(
+        &body,
+        "scout_tx_pool_over_slot_capacity(pool, &slot), &length);",
+    );
+    assert_has(&body, "(void)scout_tx_pool_over_pool_return(pool, &slot);");
 }

@@ -125,7 +125,7 @@ pub struct OwnershipContract<'a> {
     pub arity: u8,
     /// Pointer parameters carrying an ownership effect. Non-pointer
     /// parameters (`size_t dst_cap`) are intentionally absent.
-    pub params: &'static [ParamContract],
+    pub params: &'a [ParamContract],
     /// Whether the function may return a null pointer as a documented
     /// failure signal. Renders PC-lint's `r_null` so callers that skip
     /// the null check are flagged.
@@ -280,11 +280,13 @@ pub struct PoolFnContract {
     pub params: &'static [ParamContract],
     /// Whether the function returns null on a tag-check failure.
     pub may_return_null: bool,
-    /// Whether only a pool that keeps the book of its lendings declares the
-    /// function (docs/adr/0111 D4): one a lent slot crosses an interface by.
-    /// A pool that keeps one state per slot declares none of them, and its
-    /// header owes their annotations nothing.
-    pub lends_only: bool,
+    /// Whether only the lending pool, `<pool>_over_t`, declares the function
+    /// (docs/adr/0111 D4): one a lent slot crosses an interface by. Every
+    /// contract describes the lending pool's function, `<pool>_over<suffix>`
+    /// with the pool its first argument ([`Self::rendered_lines_over`]); one
+    /// that is not `over_only` describes the function of the pool over the
+    /// header's own storage, `<pool><suffix>`, too.
+    pub over_only: bool,
 }
 
 /// Analyzer-layer contracts for the tag-checked per-pool author API
@@ -344,14 +346,15 @@ pub struct PoolFnContract {
 /// index and there is nothing here to say about it, the same as the
 /// index-keyed seam edges.
 pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
-    // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle, size_t frame)` —
-    // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`). `frame` is a
-    // scalar, the bytes of the frame the holder wrote (docs/adr/0111 D4). A
-    // pool that keeps one state per slot declares the one-parameter form,
-    // `_link_arm_tx(sce_slot_handle_t *handle)`, which the same annotation
-    // describes: neither renderer reads the arity.
+    // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle)` — spec §synth-5-E
+    // line 1142 (`cpu-mut → dma-armed-tx`). The lending pool's form takes the
+    // frame besides, the bytes the holder wrote (docs/adr/0111 D4):
+    // `<pool>_over_link_arm_tx(<pool>_over_t *pool, sce_slot_handle_t *handle,
+    // size_t frame)`, whose arity `rendered_lines_over` counts from this one.
     PoolFnContract {
         suffix: "_link_arm_tx",
+        // The lending form's two besides its pool; the other form's one
+        // handle is within it, and neither renderer reads the arity.
         arity: 2,
         params: &[ParamContract {
             position: 0,
@@ -359,7 +362,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: false,
+        over_only: false,
     },
     // `bool <pool>_pool_return(sce_slot_handle_t *handle)` —
     // spec §synth-5-E lines 1152, 1155.
@@ -372,7 +375,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: false,
+        over_only: false,
     },
     // `const uint8_t *<pool>_slot_read(const sce_slot_handle_t *handle)`
     // — returns NULL when the handle's tag is not a CPU-visible state.
@@ -385,7 +388,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
-        lends_only: false,
+        over_only: false,
     },
     // `uint8_t *<pool>_slot_write(sce_slot_handle_t *handle)` —
     // returns NULL unless the handle's tag is `cpu-mut`.
@@ -398,7 +401,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
-        lends_only: false,
+        over_only: false,
     },
     // `bool <pool>_dma_start_rx(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1149 (`dma-armed-rx -> dma-busy-rx`). Leaves a holdable
@@ -412,7 +415,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: false,
+        over_only: false,
     },
     // `uint8_t *<pool>_dma_armed_rx_ptr(const sce_slot_handle_t *handle)`
     // — publishes the slot's address for the peripheral's descriptor.
@@ -426,7 +429,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
-        lends_only: false,
+        over_only: false,
     },
     // `bool <pool>_mutate_in_place(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1153 (`cpu-ref -> cpu-mut`). Leaves a holdable
@@ -440,9 +443,10 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: false,
+        over_only: false,
     },
-    // `<pool>_slot_index_t <pool>_into_index(sce_slot_handle_t *handle)` —
+    // `<pool>_slot_index_t <pool>_over_into_index(<pool>_over_t *pool, sce_slot_handle_t *handle)`,
+    // the handle at 0 counted without the pool —
     // docs/adr/0111 D4: the handle is given up for the index that crosses an
     // interface. The tag is read to find the slot, then invalidated, the
     // shape of `_pool_return`.
@@ -455,10 +459,10 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: true,
+        over_only: true,
     },
-    // `<pool>_slot_index_t <pool>_lend(sce_slot_handle_t *handle, uint32_t holds)`
-    // — docs/adr/0111 D4: a received frame's handle is given up to the events
+    // `<pool>_slot_index_t <pool>_over_lend(<pool>_over_t *pool, sce_slot_handle_t *handle,
+    // uint32_t holds)` — docs/adr/0111 D4: a received frame's handle is given up to the events
     // that hold the slot. Read then invalidated, as `_into_index`.
     PoolFnContract {
         suffix: "_lend",
@@ -469,7 +473,7 @@ pub const POOL_CONTRACTS: [PoolFnContract; 9] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
-        lends_only: true,
+        over_only: true,
     },
 ];
 
@@ -488,6 +492,34 @@ impl PoolFnContract {
             name: &name,
             arity: self.arity,
             params: self.params,
+            may_return_null: self.may_return_null,
+        }
+        .rendered_lines()
+    }
+
+    /// The lending pool's function for a pool called `pool_snake_name`:
+    /// `<pool>_over<suffix>` (docs/adr/0111 D4).
+    pub fn qualified_name_over(&self, pool_snake_name: &str) -> String {
+        format!("{}_over{}", pool_snake_name, self.suffix)
+    }
+
+    /// Render this contract's annotation lines for the lending pool's
+    /// function, which takes the pool, `<pool>_over_t *`, first: every
+    /// parameter one place later, and one parameter more.
+    pub fn rendered_lines_over(&self, pool_snake_name: &str) -> Vec<String> {
+        let name = self.qualified_name_over(pool_snake_name);
+        let params: Vec<ParamContract> = self
+            .params
+            .iter()
+            .map(|p| ParamContract {
+                position: p.position.saturating_add(1),
+                ..*p
+            })
+            .collect();
+        OwnershipContract {
+            name: &name,
+            arity: self.arity.saturating_add(1),
+            params: &params,
             may_return_null: self.may_return_null,
         }
         .rendered_lines()
@@ -887,17 +919,37 @@ mod tests {
         }
     }
 
-    /// A pool that keeps one state per slot declares no function a lent slot
-    /// crosses an interface by (docs/adr/0111 D4); every other function both
-    /// headers declare, so its annotation is owed by both.
+    /// The pool over the header's own storage declares no function a lent slot
+    /// crosses an interface by (docs/adr/0111 D4); the lending pool declares
+    /// every function, so every contract is owed by it.
     #[test]
-    fn only_the_index_functions_are_owed_by_a_lending_pool_alone() {
-        let lends_only: Vec<&str> = POOL_CONTRACTS
+    fn only_the_index_functions_are_the_lending_pools_alone() {
+        let over_only: Vec<&str> = POOL_CONTRACTS
             .iter()
-            .filter(|c| c.lends_only)
+            .filter(|c| c.over_only)
             .map(|c| c.suffix)
             .collect();
-        assert_eq!(lends_only, ["_into_index", "_lend"]);
+        assert_eq!(over_only, ["_into_index", "_lend"]);
+    }
+
+    /// The lending pool's function takes the pool first, so its handle is the
+    /// second argument: the annotation names `<pool>_over<suffix>` and the
+    /// handle one place later than the function of the pool over its own
+    /// storage.
+    #[test]
+    fn the_lending_pools_annotation_names_its_handle_one_place_later() {
+        let arm = POOL_CONTRACTS
+            .iter()
+            .find(|c| c.suffix == "_link_arm_tx")
+            .expect("the arm contract");
+        assert_eq!(
+            arm.rendered_lines("demo_pool"),
+            vec!["/*lint -sem(demo_pool_link_arm_tx, inout(1)) */".to_string()]
+        );
+        assert_eq!(
+            arm.rendered_lines_over("demo_pool"),
+            vec!["/*lint -sem(demo_pool_over_link_arm_tx, inout(2)) */".to_string()]
+        );
     }
 
     /// Pool names flow into the rendered text, so a pool named such

@@ -171,8 +171,7 @@ mod tests {
         // every parsed `.forge` document — non-pool documents are
         // no-ops, buffer-pool documents land in the registry.
         use crate::forge::model::{
-            BufferPoolModel, BufferPoolVariant, CachePolicy, ForgeDocument, PoolLending,
-            PoolSharing,
+            BufferPoolModel, BufferPoolVariant, CachePolicy, ForgeDocument, PoolSharing,
         };
         let pool = BufferPoolModel {
             name: "rx_pool_sram1".to_string(),
@@ -183,7 +182,6 @@ mod tests {
             dma_channel: None,
             cache_policy: CachePolicy::None,
             sharing: PoolSharing::Owner,
-            lending: PoolLending::Fixed,
             variant: BufferPoolVariant::Default,
             source_location: None,
         };

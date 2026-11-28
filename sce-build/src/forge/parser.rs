@@ -13254,30 +13254,6 @@ fn parse_buffer_pool(
         }
     };
 
-    // `<sce:lending>` is optional (docs/adr/0111 D4): a pool that lends every
-    // slot whole, the build's count of them, says nothing, and one that lends a
-    // run-time count and length named by an index across an interface says
-    // `run-time`. Any other body text is refused against the closed set, as
-    // `<sce:sharing>` is.
-    let lending = match find_sce_child(root, "lending") {
-        None => PoolLending::Fixed,
-        Some(node) => {
-            let text = node.text().unwrap_or("").trim().to_string();
-            PoolLending::from_attr(&text).ok_or_else(|| {
-                located(
-                    &node,
-                    label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
-                        element: "<sce:lending>".into(),
-                        attr: "body text".into(),
-                        value: text,
-                        allowed: PoolLending::ALL_NAMES.iter().map(|s| (*s).into()).collect(),
-                    },
-                )
-            })?
-        }
-    };
-
     Ok(BufferPoolModel {
         name: doc_name.to_string(),
         slot_count,
@@ -13287,7 +13263,6 @@ fn parse_buffer_pool(
         dma_channel,
         cache_policy,
         sharing,
-        lending,
         variant,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })

@@ -137,10 +137,6 @@ pub enum Word {
     Sharing,
     /// The `shared` value of a buffer-pool's `sharing` clause.
     Shared,
-    /// A buffer-pool's `lending` clause (docs/adr/0111 D4).
-    Lending,
-    /// The `run-time` value of a buffer-pool's `lending` clause.
-    RunTime,
     Link,
     Class,
     Framer,
@@ -355,8 +351,6 @@ impl Word {
         Word::None,
         Word::Sharing,
         Word::Shared,
-        Word::Lending,
-        Word::RunTime,
         Word::Link,
         Word::Class,
         Word::Framer,
@@ -537,8 +531,6 @@ fn en_word(w: Word) -> &'static str {
         Word::None => "none",
         Word::Sharing => "sharing",
         Word::Shared => "shared",
-        Word::Lending => "lending",
-        Word::RunTime => "run-time",
         Word::Link => "link",
         Word::Class => "class",
         Word::Framer => "framer",
@@ -1085,8 +1077,6 @@ fn ko_word(w: Word) -> &'static str {
         Word::None => "없음",
         Word::Sharing => "공유방식",
         Word::Shared => "공유",
-        Word::Lending => "대여방식",
-        Word::RunTime => "실행시",
         Word::Link => "링크",
         Word::Class => "종류",
         Word::Framer => "프레이머",

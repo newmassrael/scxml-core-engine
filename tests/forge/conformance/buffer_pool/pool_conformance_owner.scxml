@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  A pool whose drive alone moves its slots and that lends at run time
-  (<sce:lending>run-time</sce:lending>): it says nothing of its sharing, and
-  its book is plain cells.
+  A pool whose drive alone moves its slots: it says nothing of its sharing.
+  The pool over its own storage keeps one state byte per slot, and a pool of
+  its lending type over storage the caller holds keeps a book of plain cells
+  (docs/adr/0111 D4).
   The scenarios of pool_contract.json run against it in the Rust and the C11
   arm alike (docs/adr/0111 D4): four slots of at most 64 bytes, on a 16-byte
   boundary, CPU-managed, so no cache maintenance is generated.
@@ -15,5 +16,4 @@
   <sce:section>sram1</sce:section>
   <sce:alignment>16</sce:alignment>
   <sce:cache-policy>none</sce:cache-policy>
-  <sce:lending>run-time</sce:lending>
 </scxml>

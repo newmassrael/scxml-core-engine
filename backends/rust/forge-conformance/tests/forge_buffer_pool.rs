@@ -11,10 +11,12 @@
 //! generational index and its reclaim, the headroom and the prefixed take, and
 //! a received slot lent to the events of its frame.
 //!
-//! The contract is a lending pool's. The pool of `fixed_pools` lends every slot
-//! whole (docs/adr/0111 D4) and runs none of it; it is held here to the layout
-//! and the calls of a pool before the book: one state byte per slot, a handle
-//! that is the slot's number, and transitions that take `&mut`.
+//! The contract is the lending type's, `Pool<Over<'_>>`: the storage type
+//! decides what a pool keeps (docs/adr/0111 D4), so every scenario makes its
+//! pool over a span. The pool over its own storage, `Pool<Owned>`, lends every
+//! slot whole and runs none of it; the owner's is held here to the layout and
+//! the calls of a pool before the book: one state byte per slot, a handle that
+//! is the slot's number, and transitions that take `&mut`.
 
 mod pools {
     // The generated modules open with `#![allow(...)]`, which `build.rs` strips
@@ -27,10 +29,6 @@ mod pools {
     #[allow(clippy::all, unused_imports, unused_variables, dead_code)]
     pub mod shared {
         include!(concat!(env!("OUT_DIR"), "/pool_conformance_shared.rs"));
-    }
-    #[allow(clippy::all, unused_imports, unused_variables, dead_code)]
-    pub mod fixed {
-        include!(concat!(env!("OUT_DIR"), "/pool_conformance_fixed.rs"));
     }
 }
 
@@ -98,8 +96,8 @@ macro_rules! pool_runner {
             /// A handle a register holds: one the CPU may write, or one
             /// holding a received frame.
             enum Held {
-                Mut(Slot<CpuMut>),
-                Ref(Slot<CpuRef>),
+                Mut(Slot<CpuMut, u32>),
+                Ref(Slot<CpuRef, u32>),
             }
 
             fn lend_outcome(refused: LendRefused) -> &'static str {
@@ -126,30 +124,21 @@ macro_rules! pool_runner {
                 let steps = field(scenario, "steps", id)
                     .as_array()
                     .unwrap_or_else(|| panic!("{id}: \"steps\" is not a list"));
-                if let Some(over) = make.get("over") {
-                    let mut arena = Arena([0u8; 272]);
-                    let offset = number(over, "offset", id);
-                    let span = number(over, "span", id);
-                    let made = $Pool::over(
-                        &mut arena.0[offset..offset + span],
-                        number(over, "count", id),
-                        number(over, "len", id),
-                    );
-                    match made {
-                        Ok(pool) => {
-                            assert_eq!(expect, "ok", "{id}: the pool over the span was made");
-                            steps_of(&pool, id, steps);
-                        }
-                        Err(refused) => assert_eq!(pool_outcome(refused), expect, "{id}"),
+                let over = field(make, "over", id);
+                let mut arena = Arena([0u8; 272]);
+                let offset = number(over, "offset", id);
+                let span = number(over, "span", id);
+                let made = $Pool::over(
+                    &mut arena.0[offset..offset + span],
+                    number(over, "count", id),
+                    number(over, "len", id),
+                );
+                match made {
+                    Ok(pool) => {
+                        assert_eq!(expect, "ok", "{id}: the pool over the span was made");
+                        steps_of(&pool, id, steps);
                     }
-                } else {
-                    match $Pool::with_count(number(make, "count", id)) {
-                        Ok(pool) => {
-                            assert_eq!(expect, "ok", "{id}: the pool of the count was made");
-                            steps_of(&pool, id, steps);
-                        }
-                        Err(refused) => assert_eq!(pool_outcome(refused), expect, "{id}"),
-                    }
+                    Err(refused) => assert_eq!(pool_outcome(refused), expect, "{id}"),
                 }
             }
 
@@ -430,17 +419,6 @@ fn scenarios() -> Vec<Value> {
         ["pool_conformance_owner", "pool_conformance_shared"],
         "the pools this arm generates are the pools the contract names"
     );
-    let fixed: Vec<&str> = field(&contract, "fixed_pools", "the contract")
-        .as_array()
-        .expect("\"fixed_pools\" is a list")
-        .iter()
-        .map(|p| p.as_str().expect("a pool is named"))
-        .collect();
-    assert_eq!(
-        fixed,
-        ["pool_conformance_fixed"],
-        "the pool this arm holds to the layout before the book is the one the contract names"
-    );
     let scenarios = field(&contract, "scenarios", "the contract")
         .as_array()
         .expect("\"scenarios\" is a list")
@@ -466,49 +444,50 @@ fn every_scenario_holds_for_the_shared_pool() {
     }
 }
 
-/// docs/adr/0111 D4: a pool that lends every slot whole is its slots and one
-/// state byte per slot, padded to its alignment, and nothing else: four slots
-/// of 64 bytes and four state bytes on a 16-byte boundary are 272 bytes. A
-/// lending pool over its own storage of the same bounds keeps a book beside
-/// them, which is what this one does not pay for.
+/// docs/adr/0111 D4: the pool over its own storage is its slots and one state
+/// byte per slot, padded to its alignment, and nothing else: four slots of 64
+/// bytes and four state bytes on a 16-byte boundary are 272 bytes. The book a
+/// pool of the lending type keeps, one line of words per slot, is what this
+/// one does not pay for.
 #[test]
-fn a_pool_that_lends_every_slot_whole_is_its_slots_and_one_state_byte_each() {
-    use pools::fixed::{PoolConformanceFixed, SLOT_COUNT, SLOT_SIZE};
+fn the_pool_over_its_own_storage_is_its_slots_and_one_state_byte_each() {
+    use pools::owner::{
+        Book, Owned, PoolConformanceOwner, SlotState, Storage, SLOT_COUNT, SLOT_SIZE,
+    };
     assert_eq!(SLOT_COUNT, 4);
     assert_eq!(SLOT_SIZE, 64);
-    assert_eq!(core::mem::size_of::<pools::fixed::SlotState>(), 1);
-    assert_eq!(core::mem::size_of::<PoolConformanceFixed>(), 272);
+    assert_eq!(core::mem::size_of::<SlotState>(), 1);
+    assert_eq!(core::mem::size_of::<<Owned as Storage>::Book>(), SLOT_COUNT);
+    assert_eq!(core::mem::size_of::<PoolConformanceOwner>(), 272);
     assert!(
-        core::mem::size_of::<pools::owner::PoolConformanceOwner>()
-            > core::mem::size_of::<PoolConformanceFixed>(),
-        "the lending pool's book is what the fixed one does not pay for"
+        core::mem::size_of::<Book>() > core::mem::size_of::<<Owned as Storage>::Book>(),
+        "the lending type's book is what the pool over its own storage does not pay for"
     );
 }
 
-/// docs/adr/0111 D4: a handle of a pool that lends every slot whole is the
-/// slot's number, as wide as a `usize`; a lending pool's handle carries the
+/// docs/adr/0111 D4: a handle of the pool over its own storage is the slot's
+/// number, as wide as a `usize`; a handle of the lending type carries the
 /// generation of its lending besides.
 #[test]
-fn a_handle_of_a_pool_that_lends_every_slot_whole_carries_no_generation() {
-    use pools::fixed::{CpuMut, Slot};
+fn a_handle_of_the_pool_over_its_own_storage_carries_no_generation() {
+    use pools::owner::{CpuMut, Slot};
     assert_eq!(
         core::mem::size_of::<Slot<CpuMut>>(),
         core::mem::size_of::<usize>()
     );
     assert!(
-        core::mem::size_of::<pools::owner::Slot<pools::owner::CpuMut>>()
-            > core::mem::size_of::<Slot<CpuMut>>(),
-        "the generation is a lending pool's handle's alone"
+        core::mem::size_of::<Slot<CpuMut, u32>>() > core::mem::size_of::<Slot<CpuMut>>(),
+        "the generation is the lending type's handle's alone"
     );
 }
 
-/// docs/adr/0111 D4: the pool that lends every slot whole keeps the calls it
-/// had before the book: a lending names no length, a transition takes the pool
-/// by `&mut`, and the seam is keyed by the slot's position.
+/// docs/adr/0111 D4: the pool over its own storage keeps the calls it had
+/// before the book: a lending names no length, a transition takes the pool by
+/// `&mut`, and the seam is keyed by the slot's position.
 #[test]
-fn a_pool_that_lends_every_slot_whole_keeps_the_calls_it_had_before_the_book() {
-    use pools::fixed::{PoolConformanceFixed, SlotState, SLOT_COUNT, SLOT_SIZE};
-    let mut pool = PoolConformanceFixed::new();
+fn the_pool_over_its_own_storage_keeps_the_calls_it_had_before_the_book() {
+    use pools::owner::{PoolConformanceOwner, SlotState, SLOT_COUNT, SLOT_SIZE};
+    let mut pool = PoolConformanceOwner::new();
     assert_eq!(pool.free_count(), SLOT_COUNT);
 
     let mut slot = pool

@@ -337,7 +337,7 @@ use crate::forge::model::{
     Direction, Endian, EnumModel, EventSchemaModel, FeaturesModel, FilterModel, FilterType,
     FlagDef, FoldBody, ForgeDocument, ForgeField, InterpolationMethod, InterpolationModel,
     LinkClass, LinkModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy,
-    PoolLending, PoolSharing, PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel,
+    PoolSharing, PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel,
     ProcedureState, ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage,
     SceType, TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
     TransformModel, ValidatorModel, WorkerModel,
@@ -4412,12 +4412,6 @@ fn render_buffer_pool(m: &BufferPoolModel) -> Vec<Node> {
     if m.sharing == PoolSharing::Shared {
         head.push(Part::Word(Word::Sharing));
         head.push(Part::Word(Word::Shared));
-    }
-    // `fixed` is what a document that says nothing means, so only the other
-    // value is written (docs/adr/0111 D4).
-    if m.lending == PoolLending::RunTime {
-        head.push(Part::Word(Word::Lending));
-        head.push(Part::Word(Word::RunTime));
     }
     out.line_of(head);
     match &m.variant {

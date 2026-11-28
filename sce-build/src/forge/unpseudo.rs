@@ -43,7 +43,7 @@ use crate::forge::model::{
     BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CodecEncoding, CodecField,
     CodecModel, CodecTestVector, CodecVariant, ContentLineEntry, ContentLineModel, CountRef,
     DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
-    PeekByteSpec, PoolLending, PoolSharing, PresentIfPredicate, PresentIfScope, ProcedureAssign,
+    PeekByteSpec, PoolSharing, PresentIfPredicate, PresentIfScope, ProcedureAssign,
     ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
     ProcedureTransition, TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId,
     TlvTerminateStrategy, VariantArm,
@@ -1285,7 +1285,6 @@ fn parse_buffer_pool(head: &Line<'_>, body: &[&Line<'_>]) -> Result<BufferPoolMo
         dma_channel: None,
         cache_policy: CachePolicy::None,
         sharing: PoolSharing::Owner,
-        lending: PoolLending::Fixed,
         variant: BufferPoolVariant::Default,
         source_location: None,
     };
@@ -1306,18 +1305,6 @@ fn parse_buffer_pool(head: &Line<'_>, body: &[&Line<'_>]) -> Result<BufferPoolMo
                         return Err(ParseError {
                             line: head.number,
                             why: format!("`{other}` is not a pool sharing"),
-                        })
-                    }
-                }
-            }
-            "lending" => {
-                m.lending = match value {
-                    "fixed" => PoolLending::Fixed,
-                    "run-time" => PoolLending::RunTime,
-                    other => {
-                        return Err(ParseError {
-                            line: head.number,
-                            why: format!("`{other}` is not a pool lending"),
                         })
                     }
                 }
@@ -4596,66 +4583,6 @@ mod tests {
         assert_eq!(pool.sharing, PoolSharing::Owner);
         let page = crate::forge::pseudo::render(&doc).expect("the page renders");
         assert!(!page.contains("sharing"), "{page}");
-    }
-
-    /// A pool that lends at run time says so on its page, and the page reads
-    /// back to the same pool (docs/adr/0111 D4). One that says nothing lends
-    /// every slot whole, which the page leaves unwritten.
-    #[test]
-    fn a_run_time_buffer_pool_reads_back_run_time() {
-        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="buffer-pool" name="tx_pool" version="1.0">
-  <sce:slot-count>4</sce:slot-count>
-  <sce:slot-size>64</sce:slot-size>
-  <sce:section>sram1</sce:section>
-  <sce:alignment>16</sce:alignment>
-  <sce:cache-policy>none</sce:cache-policy>
-  <sce:lending>run-time</sce:lending>
-</scxml>"#;
-        let doc = crate::forge::parser::parse_forge(
-            xml,
-            crate::DocumentLabel {
-                identifier: "tx_pool",
-                diagnostic_label: "tx_pool.scxml",
-            },
-        )
-        .expect("the pool parses")
-        .expect("a buffer-pool is a forge document");
-        let ForgeDocument::BufferPool(pool) = &doc else {
-            panic!("a buffer-pool parses as one");
-        };
-        assert_eq!(pool.lending, PoolLending::RunTime);
-        assert!(pool.lends(), "a pool that lends at run time keeps a book");
-        let page = crate::forge::pseudo::render(&doc).expect("the page renders");
-        assert!(page.contains(" lending run-time"), "{page}");
-        let back = parse(&page).unwrap_or_else(|e| panic!("{e}\n{page}"));
-        assert_eq!(
-            ir_for_comparison(&back).ok(),
-            ir_for_comparison(&doc).ok(),
-            "{page}"
-        );
-
-        let fixed = xml.replace("  <sce:lending>run-time</sce:lending>\n", "");
-        let doc = crate::forge::parser::parse_forge(
-            &fixed,
-            crate::DocumentLabel {
-                identifier: "tx_pool",
-                diagnostic_label: "tx_pool.scxml",
-            },
-        )
-        .expect("the pool parses")
-        .expect("a buffer-pool is a forge document");
-        let ForgeDocument::BufferPool(pool) = &doc else {
-            panic!("a buffer-pool parses as one");
-        };
-        assert_eq!(pool.lending, PoolLending::Fixed);
-        assert!(
-            !pool.lends(),
-            "a fixed owner's pool keeps one state per slot"
-        );
-        let page = crate::forge::pseudo::render(&doc).expect("the page renders");
-        assert!(!page.contains("lending"), "{page}");
     }
 
     /// A map variable's page reads back to the same type, and so does a set's.

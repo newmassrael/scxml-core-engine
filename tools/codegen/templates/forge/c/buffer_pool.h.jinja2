@@ -100,15 +100,6 @@ extern "C" {
  * `maintain`; the other two policies emit no maintenance calls. */
 #define {{ upper_name }}_CACHE_POLICY "{{ cache_policy }}"
 
-/* What a lending of the pool names at run time (`<sce:lending>`,
- * docs/adr/0111 D4), and whether the pool keeps the book of its lendings:
- * it lends at run time, or it is `shared`. A pool that keeps no book lends
- * every slot whole and keeps one state per slot, the layout and the
- * functions of a pool before the book: no `_init`, `_init_over`, index,
- * headroom or lent holds, and its lendings name no length. */
-#define {{ upper_name }}_LENDING "{{ lending }}"
-#define {{ upper_name }}_LENDS {% if lends %}1{% else %}0{% endif %}
-
 {%- if needs_clean_extern or needs_invalidate_extern %}
 
 /* C5 cache-maintenance externs (spec §synth-5-I lines 1736-1740). The
@@ -276,14 +267,18 @@ SCE_STATIC_ASSERT(SCE_ALIGNOF({{ snake_name }}_slot_t) == {{ upper_name }}_ALIGN
 SCE_STATIC_ASSERT(sizeof({{ snake_name }}_slot_t) == {{ upper_name }}_SLOT_SIZE,
                   "slot stride must equal <sce:slot-size>; padding here would mean the pool "
                   "silently occupies more SRAM than the author budgeted");
-{% if lends %}
+{# The lending pool is emitted for every document; the pool over the header's own storage after it. #}
 
-/* ── Lending: run-time count and length, a generational index ──────
+/* ── The lending pool, `{{ snake_name }}_over_t`: run-time count and length ─
  *
- * docs/adr/0111 D4. `SLOT_COUNT` and `SLOT_SIZE` are the bounds the pool
- * reserves at build; the pool lends `count()` slots of at most `slot_len()`
- * bytes, fixed when it is made (`_init`, `_init_over`), and each lending
- * names its length. A lent slot crosses an interface as its
+ * docs/adr/0111 D4. The storage type decides what a pool keeps, as a map's
+ * storage does (docs/adr/0154): the pool over the header's own storage keeps
+ * one state per slot, and a pool over storage the caller holds,
+ * `{{ snake_name }}_over_t`, keeps the book. `SLOT_COUNT` and `SLOT_SIZE` are the
+ * bounds it reserves; it lends `_over_count` slots of at most
+ * `_over_slot_len` bytes, fixed by `_init_over`, and each lending names
+ * its length. Both are `static inline`, so the one a program does not call
+ * costs it nothing. A lent slot crosses an interface as its
  * `_slot_index_t`: its number and the generation of the lending, which
  * advances each time the slot returns to `free`, so an index kept past its
  * lending names no slot. */
@@ -335,11 +330,13 @@ typedef struct {
     uint32_t holds;
 } {{ snake_name }}_entry_t;
 
-/* The book: one line per slot of the bound, the pool's own whatever its
- * storage. `withheld` is `SLOT_COUNT` less the run-time count and `stride`
- * zero means `SLOT_SIZE`, so a book that is all zero is the pool of every
- * slot over its own storage with no slot out, and the static below needs no
- * initializer: it lies in `.bss`. */
+/* A pool that lends at run time over storage the caller holds (ADR 0082,
+ * docs/adr/0111 D4): its book, one line per slot of the bound, and the span
+ * it was cut from. Made by `{{ snake_name }}_init_over`; one never made lends
+ * nothing. Every function of it takes the pool, never NULL, as its first
+ * argument and is named `{{ snake_name }}_over_*`. The pool over the header's own
+ * storage is the other type, the static one below, which keeps one state
+ * per slot unless the pool is `shared`. */
 typedef struct {
     {{ snake_name }}_entry_t entries[{{ slot_count }}];
     uint32_t withheld;
@@ -347,9 +344,7 @@ typedef struct {
     uint32_t refused_prefixes;
     uint32_t stride;
     uint8_t *base;
-} {{ snake_name }}_book_t;
-
-static {{ snake_name }}_book_t {{ snake_name }}_book;
+} {{ snake_name }}_over_t;
 {% if shared %}
 
 /* The book's words, `shared`: the holder of the drive and a driver context
@@ -433,65 +428,61 @@ static inline void {{ snake_name }}_word_bump(uint32_t *word) {
     }
 }
 
-/* A deployment that holds the slots' storage itself (ADR 0082) defines
- * `{{ upper_name }}_CALLER_STORAGE` before including this header: the pool
- * then reserves no storage of its own and lends nothing until
- * `{{ snake_name }}_init_over` gives it a span (docs/adr/0111 D4). */
-#ifndef {{ upper_name }}_CALLER_STORAGE
-__attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
-static {{ snake_name }}_slot_t {{ snake_name }}_storage[{{ slot_count }}];
-#endif
-
-/* How many slots this pool lends: its run-time count. Zero for a pool over
- * the caller's storage that has not been given a span. */
-static inline size_t {{ snake_name }}_count(void) {
-#ifdef {{ upper_name }}_CALLER_STORAGE
-    if ({{ snake_name }}_book.base == NULL) return 0u;
-#endif
-    return {{ upper_name }}_SLOT_COUNT - (size_t){{ snake_name }}_book.withheld;
+/* How many slots this pool lends: its run-time count. Zero for a pool
+ * `{{ snake_name }}_init_over` has not made. */
+static inline size_t {{ snake_name }}_over_count({{ snake_name }}_over_t *pool) {
+    if (pool->base == NULL) return 0u;
+    return {{ upper_name }}_SLOT_COUNT - (size_t)pool->withheld;
 }
 
-/* The length of each slot: `SLOT_SIZE` over the pool's own storage, the
- * length the caller's span was cut into otherwise. */
-static inline size_t {{ snake_name }}_slot_len(void) {
-    return {{ snake_name }}_book.stride == 0u ? {{ upper_name }}_SLOT_SIZE : (size_t){{ snake_name }}_book.stride;
+/* The length of each slot: the length the span was cut into. */
+static inline size_t {{ snake_name }}_over_slot_len({{ snake_name }}_over_t *pool) {
+    return (size_t)pool->stride;
 }
 
 /* The first byte of slot 0. */
-static inline uint8_t *{{ snake_name }}_base(void) {
-#ifdef {{ upper_name }}_CALLER_STORAGE
-    return {{ snake_name }}_book.base;
-#else
-    return {{ snake_name }}_book.base != NULL ? {{ snake_name }}_book.base : {{ snake_name }}_storage[0].bytes;
-#endif
+static inline uint8_t *{{ snake_name }}_over_base({{ snake_name }}_over_t *pool) {
+    return pool->base;
 }
 
 /* The first byte of a slot the pool counts. */
-static inline uint8_t *{{ snake_name }}_slot_ptr(size_t idx) {
-    return {{ snake_name }}_base() + idx * {{ snake_name }}_slot_len();
+static inline uint8_t *{{ snake_name }}_over_slot_ptr({{ snake_name }}_over_t *pool, size_t idx) {
+    return {{ snake_name }}_over_base(pool) + idx * {{ snake_name }}_over_slot_len(pool);
 }
 
 /* How many stale, forged or misplaced indices and handles the pool has
  * refused (`pool/ownership-violation`). */
-static inline uint32_t {{ snake_name }}_ownership_violations(void) {
-    return {{ snake_name }}_word_load(&{{ snake_name }}_book.violations);
+static inline uint32_t {{ snake_name }}_over_ownership_violations({{ snake_name }}_over_t *pool) {
+    return {{ snake_name }}_word_load(&pool->violations);
 }
 
 /* How many takes the pool refused for a prefix wider than the slot's
  * headroom. */
-static inline uint32_t {{ snake_name }}_refused_prefixes(void) {
-    return {{ snake_name }}_word_load(&{{ snake_name }}_book.refused_prefixes);
+static inline uint32_t {{ snake_name }}_over_refused_prefixes({{ snake_name }}_over_t *pool) {
+    return {{ snake_name }}_word_load(&pool->refused_prefixes);
 }
 
-static inline void {{ snake_name }}_violation(void) {
-    {{ snake_name }}_word_bump(&{{ snake_name }}_book.violations);
+static inline void {{ snake_name }}_over_violation({{ snake_name }}_over_t *pool) {
+    {{ snake_name }}_word_bump(&pool->violations);
 }
 
-/* Clear the book and make it lend `count` slots of `stride` (zero: `SLOT_SIZE`)
- * from `base` (NULL: the pool's own storage). */
-static inline void {{ snake_name }}_reset(size_t count, uint8_t *base, size_t stride) {
+/* Make `pool` a pool over storage the caller holds (ADR 0082): the `len`
+ * bytes at `bytes` cut into `count` slots of `slot_len` bytes, each within
+ * the build bounds (`1 <= count <= SLOT_COUNT`, `1 <= slot_len <= SLOT_SIZE`,
+ * `slot_len` a multiple of `ALIGNMENT` so every slot starts on it). The span
+ * must hold `count * slot_len` bytes and start on `ALIGNMENT`. Returns false,
+ * and changes nothing, for a span or a number out of range. The book is the
+ * pool's own; made while no slot of it is out. A storage of static duration
+ * the program owns is lent the same way: a pool whose slots cross an
+ * interface by index is this type over it. */
+static inline bool {{ snake_name }}_init_over({{ snake_name }}_over_t *pool, uint8_t *bytes, size_t len, size_t count, size_t slot_len) {
+    if (pool == NULL) return false;
+    if (count < 1u || count > {{ upper_name }}_SLOT_COUNT) return false;
+    if (slot_len < 1u || slot_len > {{ upper_name }}_SLOT_SIZE || slot_len % {{ upper_name }}_ALIGNMENT != 0u) return false;
+    if (bytes == NULL || len / slot_len < count) return false;
+    if ((uintptr_t)(const void *)bytes % {{ upper_name }}_ALIGNMENT != 0u) return false;
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
-        {{ snake_name }}_entry_t *entry = &{{ snake_name }}_book.entries[i];
+        {{ snake_name }}_entry_t *entry = &pool->entries[i];
         entry->state = 0u;
         entry->generation = 0u;
         entry->len = 0u;
@@ -499,54 +490,29 @@ static inline void {{ snake_name }}_reset(size_t count, uint8_t *base, size_t st
         entry->frame = 0u;
         entry->holds = 0u;
     }
-    {{ snake_name }}_book.withheld = (uint32_t)({{ upper_name }}_SLOT_COUNT - count);
-    {{ snake_name }}_book.violations = 0u;
-    {{ snake_name }}_book.refused_prefixes = 0u;
-    {{ snake_name }}_book.stride = (uint32_t)stride;
-    {{ snake_name }}_book.base = base;
-}
-#ifndef {{ upper_name }}_CALLER_STORAGE
-/* Make the pool lend `count` of its own slots, `1 <= count <= SLOT_COUNT`.
- * Returns false, and changes nothing, for any other count. Made while no
- * slot is out; a pool never made lends every slot. */
-static inline bool {{ snake_name }}_init(size_t count) {
-    if (count < 1u || count > {{ upper_name }}_SLOT_COUNT) return false;
-    {{ snake_name }}_reset(count, NULL, 0u);
-    return true;
-}
-#endif
-
-/* Make the pool over storage the caller holds (ADR 0082): the `len` bytes
- * at `bytes` cut into `count` slots of `slot_len` bytes, each within the
- * build bounds (`1 <= count <= SLOT_COUNT`, `1 <= slot_len <= SLOT_SIZE`,
- * `slot_len` a multiple of `ALIGNMENT` so every slot starts on it). The span
- * must hold `count * slot_len` bytes and start on `ALIGNMENT`. Returns false,
- * and changes nothing, for a span or a number out of range. The book stays
- * the pool's own. */
-static inline bool {{ snake_name }}_init_over(uint8_t *bytes, size_t len, size_t count, size_t slot_len) {
-    if (count < 1u || count > {{ upper_name }}_SLOT_COUNT) return false;
-    if (slot_len < 1u || slot_len > {{ upper_name }}_SLOT_SIZE || slot_len % {{ upper_name }}_ALIGNMENT != 0u) return false;
-    if (bytes == NULL || len / slot_len < count) return false;
-    if ((uintptr_t)(const void *)bytes % {{ upper_name }}_ALIGNMENT != 0u) return false;
-    {{ snake_name }}_reset(count, bytes, slot_len);
+    pool->withheld = (uint32_t)({{ upper_name }}_SLOT_COUNT - count);
+    pool->violations = 0u;
+    pool->refused_prefixes = 0u;
+    pool->stride = (uint32_t)slot_len;
+    pool->base = bytes;
     return true;
 }
 
 /* Whether a lending of `len` bytes with `headroom` of them kept in front of
  * the frame fits this pool's slots: an invalid handle from a lending that
  * fits means every slot the pool counts is out. */
-static inline {{ snake_name }}_lend_refused_t {{ snake_name }}_lend_refusal(size_t len, size_t headroom) {
-    if (len < 1u || len > {{ snake_name }}_slot_len()) return {{ upper_name }}_LEND_LENGTH;
+static inline {{ snake_name }}_lend_refused_t {{ snake_name }}_over_lend_refusal({{ snake_name }}_over_t *pool, size_t len, size_t headroom) {
+    if (len < 1u || len > {{ snake_name }}_over_slot_len(pool)) return {{ upper_name }}_LEND_LENGTH;
     if (headroom >= len) return {{ upper_name }}_LEND_HEADROOM;
     return {{ upper_name }}_LEND_FITS;
 }
 
 /* Move the first free slot the pool counts to `to`, lent `len` bytes long. */
-static inline bool {{ snake_name }}_lend_slot(sce_slot_state_t to, size_t len, size_t headroom, size_t *idx) {
-    size_t count = {{ snake_name }}_count();
-    if ({{ snake_name }}_lend_refusal(len, headroom) != {{ upper_name }}_LEND_FITS) return false;
+static inline bool {{ snake_name }}_over_lend_slot({{ snake_name }}_over_t *pool, sce_slot_state_t to, size_t len, size_t headroom, size_t *idx) {
+    size_t count = {{ snake_name }}_over_count(pool);
+    if ({{ snake_name }}_over_lend_refusal(pool, len, headroom) != {{ upper_name }}_LEND_FITS) return false;
     for (size_t i = 0; i < count; ++i) {
-        {{ snake_name }}_entry_t *entry = &{{ snake_name }}_book.entries[i];
+        {{ snake_name }}_entry_t *entry = &pool->entries[i];
         if ({{ snake_name }}_word_cas(&entry->state, (uint32_t)SCE_SLOT_FREE, (uint32_t)to)) {
             {{ snake_name }}_word_store(&entry->len, (uint32_t)len);
             {{ snake_name }}_word_store(&entry->headroom, (uint32_t)headroom);
@@ -561,8 +527,8 @@ static inline bool {{ snake_name }}_lend_slot(sce_slot_state_t to, size_t len, s
 /* Return a slot to `free`: its next lending has the next generation, and
  * every word it was lent with is cleared. The caller is the one context
  * moving the slot. */
-static inline void {{ snake_name }}_free(size_t idx) {
-    {{ snake_name }}_entry_t *entry = &{{ snake_name }}_book.entries[idx];
+static inline void {{ snake_name }}_over_free({{ snake_name }}_over_t *pool, size_t idx) {
+    {{ snake_name }}_entry_t *entry = &pool->entries[idx];
     {{ snake_name }}_word_store(&entry->generation, {{ snake_name }}_word_load(&entry->generation) + 1u);
     {{ snake_name }}_word_store(&entry->len, 0u);
     {{ snake_name }}_word_store(&entry->headroom, 0u);
@@ -573,19 +539,19 @@ static inline void {{ snake_name }}_free(size_t idx) {
 
 /* The slot a handle names when its tag is `state` and the book agrees, or
  * SIZE_MAX. */
-static inline size_t {{ snake_name }}_held(const sce_slot_handle_t *handle, sce_slot_state_t state) {
+static inline size_t {{ snake_name }}_over_held({{ snake_name }}_over_t *pool, const sce_slot_handle_t *handle, sce_slot_state_t state) {
     if (handle == NULL || handle->state != state) return SIZE_MAX;
-    if (handle->idx >= {{ snake_name }}_count()) return SIZE_MAX;
-    if ({{ snake_name }}_word_load(&{{ snake_name }}_book.entries[handle->idx].state) != (uint32_t)state) return SIZE_MAX;
+    if (handle->idx >= {{ snake_name }}_over_count(pool)) return SIZE_MAX;
+    if ({{ snake_name }}_word_load(&pool->entries[handle->idx].state) != (uint32_t)state) return SIZE_MAX;
     return handle->idx;
 }
 
 /* The slot an index names when the pool counts it, its generation is the
  * index's and its book word is `word`, or SIZE_MAX. */
-static inline size_t {{ snake_name }}_named({{ snake_name }}_slot_index_t index, uint32_t word) {
+static inline size_t {{ snake_name }}_over_named({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index, uint32_t word) {
     const {{ snake_name }}_entry_t *entry;
-    if ((size_t)index.slot >= {{ snake_name }}_count()) return SIZE_MAX;
-    entry = &{{ snake_name }}_book.entries[index.slot];
+    if ((size_t)index.slot >= {{ snake_name }}_over_count(pool)) return SIZE_MAX;
+    entry = &pool->entries[index.slot];
     if ({{ snake_name }}_word_load(&entry->generation) != index.generation) return SIZE_MAX;
     if ({{ snake_name }}_word_load(&entry->state) != word) return SIZE_MAX;
     return (size_t)index.slot;
@@ -606,10 +572,10 @@ static inline {{ snake_name }}_slot_index_t {{ snake_name }}_no_index(void) {
  * Returns `INVALID_HANDLE` when the lending does not fit
  * (`lend_refusal` says why) or every slot the pool counts is out. The
  * returned handle's `state` is `SCE_SLOT_CPU_MUT`. */
-static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(size_t len, size_t headroom) {
+static inline sce_slot_handle_t {{ snake_name }}_over_pool_acquire_for_encode({{ snake_name }}_over_t *pool, size_t len, size_t headroom) {
     size_t idx = SIZE_MAX;
     sce_slot_handle_t h;
-    if (!{{ snake_name }}_lend_slot(SCE_SLOT_CPU_MUT, len, headroom, &idx)) return {{ upper_name }}_INVALID_HANDLE;
+    if (!{{ snake_name }}_over_lend_slot(pool, SCE_SLOT_CPU_MUT, len, headroom, &idx)) return {{ upper_name }}_INVALID_HANDLE;
     h.state = SCE_SLOT_CPU_MUT;
     h.idx = idx;
     return h;
@@ -624,13 +590,13 @@ static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(size_t 
  * for this slot region while it sat on the freelist. Without the pre-arm
  * invalidate, those stale lines would shadow DMA writes even after the
  * post-RX invalidate (RFC §synth-5-E lines 1199-1212). */
-static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(size_t len) {
+static inline sce_slot_handle_t {{ snake_name }}_over_link_arm_rx({{ snake_name }}_over_t *pool, size_t len) {
     size_t idx = SIZE_MAX;
     sce_slot_handle_t h;
-    if (!{{ snake_name }}_lend_slot(SCE_SLOT_DMA_ARMED_RX, len, 0u, &idx)) return {{ upper_name }}_INVALID_HANDLE;
+    if (!{{ snake_name }}_over_lend_slot(pool, SCE_SLOT_DMA_ARMED_RX, len, 0u, &idx)) return {{ upper_name }}_INVALID_HANDLE;
 {% if edge_cache["link_arm_rx"].invalidate %}
     /* C5 pre-arm cache-invalidate (spec lines 1189-1198). */
-    sce_dcache_invalidate_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_invalidate_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
     h.state = SCE_SLOT_DMA_ARMED_RX;
     h.idx = idx;
@@ -652,23 +618,23 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(size_t len) {
  * read to decide the transition, then rewritten. Rendered from
  * `forge::ownership_contract`; `check_analyzer_annotations_emitted_c11`
  * fails the render if this lookup goes missing. */
-{{ analyzer["_link_arm_tx"] }}
-static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle, size_t frame) {
+{{ analyzer["_over_link_arm_tx"] }}
+static inline bool {{ snake_name }}_over_link_arm_tx({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle, size_t frame) {
     {{ snake_name }}_entry_t *entry;
     size_t idx;
     if (handle == NULL) return false;
-    idx = {{ snake_name }}_held(handle, SCE_SLOT_CPU_MUT);
+    idx = {{ snake_name }}_over_held(pool, handle, SCE_SLOT_CPU_MUT);
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_link_arm_tx: handle is not cpu-mut (reused after a prior transition?)");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_link_arm_tx: handle is not cpu-mut (reused after a prior transition?)");
         return false;
     }
-    entry = &{{ snake_name }}_book.entries[idx];
+    entry = &pool->entries[idx];
     if (frame > (size_t)({{ snake_name }}_word_load(&entry->len) - {{ snake_name }}_word_load(&entry->headroom))) {
         return false;
     }
 {% if edge_cache["link_arm_tx"].clean %}
     /* C5 cache-clean before TX descriptor publish (spec lines 1186-1188). */
-    sce_dcache_clean_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_clean_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
     {{ snake_name }}_word_store(&entry->frame, (uint32_t)frame);
     {{ snake_name }}_word_store(&entry->state, (uint32_t)SCE_SLOT_DMA_ARMED_TX);
@@ -690,22 +656,22 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle, size_
  * mismatch (no state change).
  * Analyzer layer (spec lines 1349-1365): same read-then-
  * invalidate shape as `link_arm_tx`. */
-{{ analyzer["_pool_return"] }}
-static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
+{{ analyzer["_over_pool_return"] }}
+static inline bool {{ snake_name }}_over_pool_return({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle) {
     size_t idx;
     if (handle == NULL) return false;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
         /* The double-take shape: a handle already invalidated by a
            prior return / arm is being returned again. */
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_pool_return: handle is not CPU-owned (returned twice?)");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_pool_return: handle is not CPU-owned (returned twice?)");
         return false;
     }
-    idx = {{ snake_name }}_held(handle, handle->state);
+    idx = {{ snake_name }}_over_held(pool, handle, handle->state);
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_pool_return: pool state disagrees with the handle tag");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_pool_return: pool state disagrees with the handle tag");
         return false;
     }
-    {{ snake_name }}_free(idx);
+    {{ snake_name }}_over_free(pool, idx);
     handle->state = SCE_SLOT_INVALID;
     handle->idx = SIZE_MAX;
     return true;
@@ -713,10 +679,10 @@ static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
 
 /* The frame's room of a slot a CPU handle holds: its bytes after the
  * headroom, up to the length it was lent with. */
-static inline size_t {{ snake_name }}_room(size_t idx, uint8_t **start) {
-    const {{ snake_name }}_entry_t *entry = &{{ snake_name }}_book.entries[idx];
+static inline size_t {{ snake_name }}_over_room({{ snake_name }}_over_t *pool, size_t idx, uint8_t **start) {
+    const {{ snake_name }}_entry_t *entry = &pool->entries[idx];
     uint32_t headroom = {{ snake_name }}_word_load(&entry->headroom);
-    *start = {{ snake_name }}_slot_ptr(idx) + headroom;
+    *start = {{ snake_name }}_over_slot_ptr(pool, idx) + headroom;
     return (size_t)({{ snake_name }}_word_load(&entry->len) - headroom);
 }
 
@@ -729,22 +695,22 @@ static inline size_t {{ snake_name }}_room(size_t idx, uint8_t **start) {
  * documented failure signal, so a caller that dereferences without
  * checking is flagged. The typestate layer cannot state this: Clang's
  * family has no return-nullability attribute. */
-{{ analyzer["_slot_read"] }}
-static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t *handle) {
+{{ analyzer["_over_slot_read"] }}
+static inline const uint8_t *{{ snake_name }}_over_slot_read({{ snake_name }}_over_t *pool, const sce_slot_handle_t *handle) {
     uint8_t *start;
     size_t idx;
     if (handle == NULL) return NULL;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
         /* The use-after shape: reading a slot the CPU no longer owns. */
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_read: slot is not CPU-visible (read after return / arm?)");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_slot_read: slot is not CPU-visible (read after return / arm?)");
         return NULL;
     }
-    idx = {{ snake_name }}_held(handle, handle->state);
+    idx = {{ snake_name }}_over_held(pool, handle, handle->state);
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_read: pool state disagrees with the handle tag");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_slot_read: pool state disagrees with the handle tag");
         return NULL;
     }
-    (void){{ snake_name }}_room(idx, &start);
+    (void){{ snake_name }}_over_room(pool, idx, &start);
     return start;
 }
 
@@ -753,34 +719,34 @@ static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t 
  * shared-read state per spec line 1135 and must not be mutated.
  * Analyzer layer (spec lines 1349-1365): `r_null`, same rationale as
  * `slot_read`. The handle is read but not written, so no `inout`. */
-{{ analyzer["_slot_write"] }}
-static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
+{{ analyzer["_over_slot_write"] }}
+static inline uint8_t *{{ snake_name }}_over_slot_write({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle) {
     uint8_t *start;
     size_t idx;
     if (handle == NULL) return NULL;
-    idx = {{ snake_name }}_held(handle, SCE_SLOT_CPU_MUT);
+    idx = {{ snake_name }}_over_held(pool, handle, SCE_SLOT_CPU_MUT);
     if (idx == SIZE_MAX) {
         /* `cpu-ref` is shared-read per spec line 1135 and reaches here
            too: mutating a slot another holder is reading is the same
            ownership violation as writing one the DMA owns. */
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_write: slot is not cpu-mut (write to a shared or DMA-owned slot?)");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_slot_write: slot is not cpu-mut (write to a shared or DMA-owned slot?)");
         return NULL;
     }
-    (void){{ snake_name }}_room(idx, &start);
+    (void){{ snake_name }}_over_room(pool, idx, &start);
     return start;
 }
 
 /* How many bytes `slot_read` / `slot_write` hand out for a CPU handle: the
  * length it was lent with less its headroom. Zero for a handle the CPU
  * does not hold. */
-static inline size_t {{ snake_name }}_slot_capacity(const sce_slot_handle_t *handle) {
+static inline size_t {{ snake_name }}_over_slot_capacity({{ snake_name }}_over_t *pool, const sce_slot_handle_t *handle) {
     uint8_t *start;
     size_t idx;
     if (handle == NULL) return 0u;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) return 0u;
-    idx = {{ snake_name }}_held(handle, handle->state);
+    idx = {{ snake_name }}_over_held(pool, handle, handle->state);
     if (idx == SIZE_MAX) return 0u;
-    return {{ snake_name }}_room(idx, &start);
+    return {{ snake_name }}_over_room(pool, idx, &start);
 }
 
 /* ── A slot index that crosses an interface (docs/adr/0111 D4) ───── */
@@ -788,14 +754,14 @@ static inline size_t {{ snake_name }}_slot_capacity(const sce_slot_handle_t *han
 /* The index of the slot a handle names, read without giving the handle
  * up; `no_index()` for a handle that names no slot the pool agrees it
  * holds. A handle `link_arm_tx` retagged names its armed slot. */
-static inline {{ snake_name }}_slot_index_t {{ snake_name }}_slot_index(const sce_slot_handle_t *handle) {
+static inline {{ snake_name }}_slot_index_t {{ snake_name }}_over_slot_index({{ snake_name }}_over_t *pool, const sce_slot_handle_t *handle) {
     {{ snake_name }}_slot_index_t index = {{ snake_name }}_no_index();
     size_t idx;
     if (handle == NULL) return index;
-    idx = {{ snake_name }}_held(handle, handle->state);
+    idx = {{ snake_name }}_over_held(pool, handle, handle->state);
     if (idx == SIZE_MAX) return index;
     index.slot = (uint32_t)idx;
-    index.generation = {{ snake_name }}_word_load(&{{ snake_name }}_book.entries[idx].generation);
+    index.generation = {{ snake_name }}_word_load(&pool->entries[idx].generation);
     return index;
 }
 
@@ -806,24 +772,24 @@ static inline {{ snake_name }}_slot_index_t {{ snake_name }}_slot_index(const sc
  * Returns `no_index()` on a mismatch.
  * Analyzer layer (spec lines 1349-1365): `inout(1)`, the shape of
  * `pool_return`. */
-{{ analyzer["_into_index"] }}
-static inline {{ snake_name }}_slot_index_t {{ snake_name }}_into_index(sce_slot_handle_t *handle) {
+{{ analyzer["_over_into_index"] }}
+static inline {{ snake_name }}_slot_index_t {{ snake_name }}_over_into_index({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle) {
     {{ snake_name }}_slot_index_t index = {{ snake_name }}_no_index();
     size_t idx;
     if (handle == NULL) return index;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF &&
         handle->state != SCE_SLOT_DMA_ARMED_RX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_into_index: handle holds no slot");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_into_index: handle holds no slot");
         return index;
     }
-    idx = {{ snake_name }}_held(handle, handle->state);
+    idx = {{ snake_name }}_over_held(pool, handle, handle->state);
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_into_index: pool state disagrees with the handle tag");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_into_index: pool state disagrees with the handle tag");
         return index;
     }
     index.slot = (uint32_t)idx;
-    index.generation = {{ snake_name }}_word_load(&{{ snake_name }}_book.entries[idx].generation);
-    {{ snake_name }}_word_store(&{{ snake_name }}_book.entries[idx].state, (uint32_t)handle->state | {{ upper_name }}_PARKED);
+    index.generation = {{ snake_name }}_word_load(&pool->entries[idx].generation);
+    {{ snake_name }}_word_store(&pool->entries[idx].state, (uint32_t)handle->state | {{ upper_name }}_PARKED);
     handle->state = SCE_SLOT_INVALID;
     handle->idx = SIZE_MAX;
     return index;
@@ -834,25 +800,25 @@ static inline {{ snake_name }}_slot_index_t {{ snake_name }}_into_index(sce_slot
  * `state`. A stale or forged index, or one whose handle was already
  * rebuilt, yields `INVALID_HANDLE` and is counted as an ownership violation
  * (`pool/ownership-violation`). */
-static inline sce_slot_handle_t {{ snake_name }}_reclaim({{ snake_name }}_slot_index_t index, sce_slot_state_t state) {
+static inline sce_slot_handle_t {{ snake_name }}_over_reclaim({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index, sce_slot_state_t state) {
     uint32_t parked = (uint32_t)state | {{ upper_name }}_PARKED;
-    size_t idx = {{ snake_name }}_named(index, parked);
+    size_t idx = {{ snake_name }}_over_named(pool, index, parked);
     {{ snake_name }}_entry_t *entry;
     sce_slot_handle_t h;
     if (idx == SIZE_MAX) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return {{ upper_name }}_INVALID_HANDLE;
     }
-    entry = &{{ snake_name }}_book.entries[idx];
+    entry = &pool->entries[idx];
     if (!{{ snake_name }}_word_cas(&entry->state, parked, (uint32_t)state)) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return {{ upper_name }}_INVALID_HANDLE;
     }
     /* A slot whose handle was rebuilt, returned and lent again between the
        check and the claim has another generation: put it back. */
     if ({{ snake_name }}_word_load(&entry->generation) != index.generation) {
         {{ snake_name }}_word_store(&entry->state, parked);
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return {{ upper_name }}_INVALID_HANDLE;
     }
     h.state = state;
@@ -870,21 +836,21 @@ static inline sce_slot_handle_t {{ snake_name }}_reclaim({{ snake_name }}_slot_i
  * otherwise.
  * Analyzer layer (spec lines 1349-1365): `inout(1)`, the shape of
  * `into_index`. */
-{{ analyzer["_lend"] }}
-static inline {{ snake_name }}_slot_index_t {{ snake_name }}_lend(sce_slot_handle_t *handle, uint32_t holds) {
+{{ analyzer["_over_lend"] }}
+static inline {{ snake_name }}_slot_index_t {{ snake_name }}_over_lend({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle, uint32_t holds) {
     {{ snake_name }}_slot_index_t index = {{ snake_name }}_no_index();
     size_t idx;
     if (handle == NULL) return index;
-    idx = {{ snake_name }}_held(handle, SCE_SLOT_CPU_REF);
+    idx = {{ snake_name }}_over_held(pool, handle, SCE_SLOT_CPU_REF);
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_lend: handle is not cpu-ref");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_lend: handle is not cpu-ref");
         return index;
     }
     if (holds == 0u) return index;
     index.slot = (uint32_t)idx;
-    index.generation = {{ snake_name }}_word_load(&{{ snake_name }}_book.entries[idx].generation);
-    {{ snake_name }}_word_store(&{{ snake_name }}_book.entries[idx].holds, holds);
-    {{ snake_name }}_word_store(&{{ snake_name }}_book.entries[idx].state,
+    index.generation = {{ snake_name }}_word_load(&pool->entries[idx].generation);
+    {{ snake_name }}_word_store(&pool->entries[idx].holds, holds);
+    {{ snake_name }}_word_store(&pool->entries[idx].state,
                                 (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
     handle->state = SCE_SLOT_INVALID;
     handle->idx = SIZE_MAX;
@@ -894,18 +860,18 @@ static inline {{ snake_name }}_slot_index_t {{ snake_name }}_lend(sce_slot_handl
 /* One more holder of a slot lent to events: an output that borrows from
  * the frame. Returns false for an index that names no lent slot of its
  * generation, counted as an ownership violation. */
-static inline bool {{ snake_name }}_hold({{ snake_name }}_slot_index_t index) {
-    size_t idx = {{ snake_name }}_named(index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
+static inline bool {{ snake_name }}_over_hold({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index) {
+    size_t idx = {{ snake_name }}_over_named(pool, index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
     uint32_t *holds;
     if (idx == SIZE_MAX) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return false;
     }
-    holds = &{{ snake_name }}_book.entries[idx].holds;
+    holds = &pool->entries[idx].holds;
     for (;;) {
         uint32_t seen = {{ snake_name }}_word_load(holds);
         if (seen == 0u) {
-            {{ snake_name }}_violation();
+            {{ snake_name }}_over_violation(pool);
             return false;
         }
         if (seen == UINT32_MAX) return false;
@@ -917,22 +883,22 @@ static inline bool {{ snake_name }}_hold({{ snake_name }}_slot_index_t index) {
  * the pool. Returns false for an index that names no lent slot of its
  * generation, or a release past the holds, counted as an ownership
  * violation. */
-static inline bool {{ snake_name }}_release({{ snake_name }}_slot_index_t index) {
-    size_t idx = {{ snake_name }}_named(index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
+static inline bool {{ snake_name }}_over_release({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index) {
+    size_t idx = {{ snake_name }}_over_named(pool, index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
     uint32_t *holds;
     if (idx == SIZE_MAX) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return false;
     }
-    holds = &{{ snake_name }}_book.entries[idx].holds;
+    holds = &pool->entries[idx].holds;
     for (;;) {
         uint32_t seen = {{ snake_name }}_word_load(holds);
         if (seen == 0u) {
-            {{ snake_name }}_violation();
+            {{ snake_name }}_over_violation(pool);
             return false;
         }
         if ({{ snake_name }}_word_cas(holds, seen, seen - 1u)) {
-            if (seen == 1u) {{ snake_name }}_free(idx);
+            if (seen == 1u) {{ snake_name }}_over_free(pool, idx);
             return true;
         }
     }
@@ -941,17 +907,17 @@ static inline bool {{ snake_name }}_release({{ snake_name }}_slot_index_t index)
 /* The frame of a slot lent to events, which a holder reads; valid while the
  * caller holds the slot. `ptr` is NULL for an index that names no lent slot
  * of its generation, counted as an ownership violation. */
-static inline {{ snake_name }}_span_t {{ snake_name }}_lent({{ snake_name }}_slot_index_t index) {
+static inline {{ snake_name }}_span_t {{ snake_name }}_over_lent({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index) {
     {{ snake_name }}_span_t span;
     uint8_t *start;
-    size_t idx = {{ snake_name }}_named(index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
+    size_t idx = {{ snake_name }}_over_named(pool, index, (uint32_t)SCE_SLOT_CPU_REF | {{ upper_name }}_LENT);
     span.ptr = NULL;
     span.len = 0u;
     if (idx == SIZE_MAX) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return span;
     }
-    span.len = {{ snake_name }}_room(idx, &start);
+    span.len = {{ snake_name }}_over_room(pool, idx, &start);
     span.ptr = start;
     return span;
 }
@@ -968,7 +934,7 @@ static inline {{ snake_name }}_span_t {{ snake_name }}_lent({{ snake_name }}_slo
  * refusal answers a span whose `ptr` is NULL. Runtime-owned: the caller is
  * the driver handing the range to the device, and nothing may write the
  * slot until `tx_complete` returns it. */
-static inline {{ snake_name }}_span_t {{ snake_name }}_take_prefixed({{ snake_name }}_slot_index_t index,
+static inline {{ snake_name }}_span_t {{ snake_name }}_over_take_prefixed({{ snake_name }}_over_t *pool, {{ snake_name }}_slot_index_t index,
                                                                     const uint8_t *prefix, size_t prefix_len) {
     {{ snake_name }}_span_t span;
     {{ snake_name }}_entry_t *entry;
@@ -976,32 +942,32 @@ static inline {{ snake_name }}_span_t {{ snake_name }}_take_prefixed({{ snake_na
     size_t headroom;
     bool too_wide;
     uint8_t *start;
-    size_t idx = {{ snake_name }}_named(index, armed);
+    size_t idx = {{ snake_name }}_over_named(pool, index, armed);
     span.ptr = NULL;
     span.len = 0u;
     if (idx == SIZE_MAX || (prefix == NULL && prefix_len != 0u)) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return span;
     }
-    entry = &{{ snake_name }}_book.entries[idx];
+    entry = &pool->entries[idx];
     headroom = (size_t){{ snake_name }}_word_load(&entry->headroom);
     too_wide = prefix_len > headroom;
     if (!{{ snake_name }}_word_cas(&entry->state, armed,
                                    too_wide ? (armed | {{ upper_name }}_CLAIM) : (uint32_t)SCE_SLOT_DMA_BUSY_TX)) {
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return span;
     }
     if ({{ snake_name }}_word_load(&entry->generation) != index.generation) {
         {{ snake_name }}_word_store(&entry->state, armed);
-        {{ snake_name }}_violation();
+        {{ snake_name }}_over_violation(pool);
         return span;
     }
     if (too_wide) {
-        {{ snake_name }}_word_bump(&{{ snake_name }}_book.refused_prefixes);
-        {{ snake_name }}_free(idx);
+        {{ snake_name }}_word_bump(&pool->refused_prefixes);
+        {{ snake_name }}_over_free(pool, idx);
         return span;
     }
-    start = {{ snake_name }}_slot_ptr(idx) + (headroom - prefix_len);
+    start = {{ snake_name }}_over_slot_ptr(pool, idx) + (headroom - prefix_len);
     for (size_t i = 0; i < prefix_len; ++i) {
         start[i] = prefix[i];
     }
@@ -1046,27 +1012,27 @@ static inline {{ snake_name }}_span_t {{ snake_name }}_take_prefixed({{ snake_na
  * once the named hardware event has been observed for this slot.
  * Tag check: handle must be in `SCE_SLOT_{{ t.from_c }}`. Returns
  * `false` on mismatch, leaving every state untouched. */
-{{ analyzer["_" ~ t.op_name] }}
-static inline bool {{ snake_name }}_{{ t.op_name }}(sce_slot_handle_t *handle) {
+{{ analyzer["_over_" ~ t.op_name] }}
+static inline bool {{ snake_name }}_over_{{ t.op_name }}({{ snake_name }}_over_t *pool, sce_slot_handle_t *handle) {
     size_t idx;
     if (handle == NULL) return false;
-    idx = {{ snake_name }}_held(handle, SCE_SLOT_{{ t.from_c }});
+    idx = {{ snake_name }}_over_held(pool, handle, SCE_SLOT_{{ t.from_c }});
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: handle is not {{ t.from_spec }}");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_{{ t.op_name }}: handle is not {{ t.from_spec }}");
         return false;
     }
 {% if t.cache_clean %}
     /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_clean_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_clean_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
 {% if t.cache_invalidate %}
     /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_invalidate_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_invalidate_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
 {% if t.to_is_free %}
-    {{ snake_name }}_free(idx);
+    {{ snake_name }}_over_free(pool, idx);
 {% else %}
-    {{ snake_name }}_word_store(&{{ snake_name }}_book.entries[idx].state, (uint32_t)SCE_SLOT_{{ t.to_c }});
+    {{ snake_name }}_word_store(&pool->entries[idx].state, (uint32_t)SCE_SLOT_{{ t.to_c }});
 {% endif %}
 {% if t.to_holdable %}
     handle->state = SCE_SLOT_{{ t.to_c }};
@@ -1088,35 +1054,35 @@ static inline bool {{ snake_name }}_{{ t.op_name }}(sce_slot_handle_t *handle) {
  * index — which is what the completion signal actually carries.
  * Refuses a slot that is not in `{{ t.from_spec }}`, so a spurious or
  * replayed interrupt cannot advance an unrelated slot. */
-static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {{ snake_name }}_{{ t.op_name }}(size_t idx) {
+static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {{ snake_name }}_over_{{ t.op_name }}({{ snake_name }}_over_t *pool, size_t idx) {
     uint32_t from = (uint32_t)SCE_SLOT_{{ t.from_c }};
 {% if t.to_holdable %}
     sce_slot_handle_t h;
 {% endif %}
-    if (idx >= {{ snake_name }}_count()) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: slot index out of range");
+    if (idx >= {{ snake_name }}_over_count(pool)) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_{{ t.op_name }}: slot index out of range");
         return {% if t.to_holdable %}{{ upper_name }}_INVALID_HANDLE{% else %}false{% endif %};
     }
 {% if t.to_is_free %}
-    if (!{{ snake_name }}_word_cas(&{{ snake_name }}_book.entries[idx].state, from, from | {{ upper_name }}_CLAIM)) {
+    if (!{{ snake_name }}_word_cas(&pool->entries[idx].state, from, from | {{ upper_name }}_CLAIM)) {
 {% else %}
-    if (!{{ snake_name }}_word_cas(&{{ snake_name }}_book.entries[idx].state, from, (uint32_t)SCE_SLOT_{{ t.to_c }})) {
+    if (!{{ snake_name }}_word_cas(&pool->entries[idx].state, from, (uint32_t)SCE_SLOT_{{ t.to_c }})) {
 {% endif %}
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: slot is not {{ t.from_spec }}");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_{{ t.op_name }}: slot is not {{ t.from_spec }}");
         return {% if t.to_holdable %}{{ upper_name }}_INVALID_HANDLE{% else %}false{% endif %};
     }
 {% if t.cache_clean %}
     /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_clean_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_clean_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
 {% if t.cache_invalidate %}
     /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}) —
        evicts the stale lines the CPU holds for a region the DMA has
        just rewritten. */
-    sce_dcache_invalidate_by_addr({{ snake_name }}_slot_ptr(idx), {{ snake_name }}_slot_len());
+    sce_dcache_invalidate_by_addr({{ snake_name }}_over_slot_ptr(pool, idx), {{ snake_name }}_over_slot_len(pool));
 {% endif %}
 {% if t.to_is_free %}
-    {{ snake_name }}_free(idx);
+    {{ snake_name }}_over_free(pool, idx);
 {% endif %}
 {% if t.to_holdable %}
     h.state = SCE_SLOT_{{ t.to_c }};
@@ -1164,16 +1130,16 @@ static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {
  * the same shape as `slot_read` — the NULL return is a documented
  * failure signal, so a caller that dereferences without checking is
  * flagged. */
-{{ analyzer["_" + a.op_name] }}
-static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(const sce_slot_handle_t *handle) {
+{{ analyzer["_over_" + a.op_name] }}
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_over_{{ a.op_name }}({{ snake_name }}_over_t *pool, const sce_slot_handle_t *handle) {
     size_t idx;
     if (handle == NULL) return NULL;
-    idx = {{ snake_name }}_held(handle, SCE_SLOT_{{ a.state_c_enum }});
+    idx = {{ snake_name }}_over_held(pool, handle, SCE_SLOT_{{ a.state_c_enum }});
     if (idx == SIZE_MAX) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
         return NULL;
     }
-    return {{ snake_name }}_slot_ptr(idx);
+    return {{ snake_name }}_over_slot_ptr(pool, idx);
 }
 
 {% else %}
@@ -1196,13 +1162,13 @@ static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_nam
  * No analyzer contract: the parameter is a slot index, not a pointer,
  * so there is no ownership effect to describe — the same reason the
  * index-keyed seam functions carry none. */
-static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(size_t idx) {
-    if (idx >= {{ snake_name }}_count()) return NULL;
-    if ({{ snake_name }}_word_load(&{{ snake_name }}_book.entries[idx].state) != (uint32_t)SCE_SLOT_{{ a.state_c_enum }}) {
-        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_over_{{ a.op_name }}({{ snake_name }}_over_t *pool, size_t idx) {
+    if (idx >= {{ snake_name }}_over_count(pool)) return NULL;
+    if ({{ snake_name }}_word_load(&pool->entries[idx].state) != (uint32_t)SCE_SLOT_{{ a.state_c_enum }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_over_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
         return NULL;
     }
-    return {{ snake_name }}_slot_ptr(idx);
+    return {{ snake_name }}_over_slot_ptr(pool, idx);
 }
 
 {% endif %}
@@ -1229,46 +1195,145 @@ static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_nam
  * Compared as `uintptr_t` rather than as pointers: a relational
  * comparison between pointers into different objects is undefined, and
  * a foreign pointer is precisely the case this has to answer for. */
-static inline size_t {{ snake_name }}_slot_index_of_ptr(const void *ptr) {
-    uintptr_t base = (uintptr_t)(const void *){{ snake_name }}_base();
+static inline size_t {{ snake_name }}_over_slot_index_of_ptr({{ snake_name }}_over_t *pool, const void *ptr) {
+    uintptr_t base = (uintptr_t)(const void *){{ snake_name }}_over_base(pool);
     uintptr_t addr = (uintptr_t)ptr;
-    size_t stride = {{ snake_name }}_slot_len();
+    size_t stride = {{ snake_name }}_over_slot_len(pool);
     size_t offset;
     size_t idx;
     if (ptr == NULL || base == 0u || addr < base) return SIZE_MAX;
     offset = (size_t)(addr - base);
     if (offset % stride != 0) return SIZE_MAX;
     idx = offset / stride;
-    return idx < {{ snake_name }}_count() ? idx : SIZE_MAX;
+    return idx < {{ snake_name }}_over_count(pool) ? idx : SIZE_MAX;
 }
 
 /* Inspect a slot's current lifecycle state. A slot the pool does not count
  * returns `SCE_SLOT_INVALID` so debug introspection cannot fault. */
-static inline sce_slot_state_t {{ snake_name }}_slot_state(size_t idx) {
-    if (idx >= {{ snake_name }}_count()) return SCE_SLOT_INVALID;
-    return (sce_slot_state_t)({{ snake_name }}_word_load(&{{ snake_name }}_book.entries[idx].state) &
+static inline sce_slot_state_t {{ snake_name }}_over_slot_state({{ snake_name }}_over_t *pool, size_t idx) {
+    if (idx >= {{ snake_name }}_over_count(pool)) return SCE_SLOT_INVALID;
+    return (sce_slot_state_t)({{ snake_name }}_word_load(&pool->entries[idx].state) &
                               {{ upper_name }}_STATE_BITS);
 }
 
 /* Number of slots the pool counts that are free. */
-static inline size_t {{ snake_name }}_free_count(void) {
+static inline size_t {{ snake_name }}_over_free_count({{ snake_name }}_over_t *pool) {
     size_t n = 0;
-    size_t count = {{ snake_name }}_count();
+    size_t count = {{ snake_name }}_over_count(pool);
     for (size_t i = 0; i < count; ++i) {
-        if ({{ snake_name }}_word_load(&{{ snake_name }}_book.entries[i].state) == (uint32_t)SCE_SLOT_FREE) {
+        if ({{ snake_name }}_word_load(&pool->entries[i].state) == (uint32_t)SCE_SLOT_FREE) {
             ++n;
         }
     }
     return n;
 }
+{% if shared %}
+
+/* ── The pool over the header's own storage: an atomic book ────────────
+ *
+ * docs/adr/0111 D4. The pool is `shared`: a driver context moves its slots
+ * too, which one state per slot cannot be shared with, so the pool over the
+ * header's own storage is a `{{ snake_name }}_over_t` over it, whose words are atomic.
+ * Its functions keep the calls of a pool before the book: a lending is a
+ * whole slot, `SLOT_SIZE` bytes with no headroom, and a frame is armed
+ * whole. What the lending pool alone does (an index, a headroom, a hold) is
+ * `{{ snake_name }}_over_*` on `&{{ snake_name }}_self`. */
+
+__attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
+static {{ snake_name }}_slot_t {{ snake_name }}_storage[{{ slot_count }}];
+
+/* Every slot of the bound over the storage above, with no slot out. */
+static {{ snake_name }}_over_t {{ snake_name }}_self = {
+    { {0u, 0u, 0u, 0u, 0u, 0u} }, 0u, 0u, 0u, (uint32_t){{ upper_name }}_SLOT_SIZE, {{ snake_name }}_storage[0].bytes};
+
+/* Lend a free slot whole for CPU-side encoding. Spec §synth-5-E line 1141. */
+static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
+    return {{ snake_name }}_over_pool_acquire_for_encode(&{{ snake_name }}_self, {{ upper_name }}_SLOT_SIZE, 0u);
+}
+
+/* Arm a free slot whole for peripheral RX. Spec §synth-5-E line 1146. */
+static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
+    return {{ snake_name }}_over_link_arm_rx(&{{ snake_name }}_self, {{ upper_name }}_SLOT_SIZE);
+}
+
+/* Hand the whole slot off to the link's TX path. Spec §synth-5-E line 1142. */
+{{ analyzer["_link_arm_tx"] }}
+static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_link_arm_tx(&{{ snake_name }}_self, handle, {{ upper_name }}_SLOT_SIZE);
+}
+
+/* Return the slot to the freelist. Spec §synth-5-E lines 1152, 1155. */
+{{ analyzer["_pool_return"] }}
+static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_pool_return(&{{ snake_name }}_self, handle);
+}
+
+/* Read-only view of the slot's bytes. */
+{{ analyzer["_slot_read"] }}
+static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_slot_read(&{{ snake_name }}_self, handle);
+}
+
+/* Mutable view of the slot's bytes. */
+{{ analyzer["_slot_write"] }}
+static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_slot_write(&{{ snake_name }}_self, handle);
+}
+{% for t in seam %}
+{% if t.from_holdable %}
+
+/* `{{ t.from_spec }} -> {{ t.to_spec }}` — {{ t.trigger }}. */
+{{ analyzer["_" ~ t.op_name] }}
+static inline bool {{ snake_name }}_{{ t.op_name }}(sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_{{ t.op_name }}(&{{ snake_name }}_self, handle);
+}
 {% else %}
 
-/* ── One state per slot, every slot lent whole ─────────────────────
+/* `{{ t.from_spec }} -> {{ t.to_spec }}` — {{ t.trigger }}. */
+static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {{ snake_name }}_{{ t.op_name }}(size_t idx) {
+    return {{ snake_name }}_over_{{ t.op_name }}(&{{ snake_name }}_self, idx);
+}
+{% endif %}
+{% endfor %}
+{% for a in addresses %}
+{% if a.holdable %}
+
+/* Address of a slot in `{{ a.state_spec }}`, for the bus master's descriptor. */
+{{ analyzer["_" + a.op_name] }}
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(const sce_slot_handle_t *handle) {
+    return {{ snake_name }}_over_{{ a.op_name }}(&{{ snake_name }}_self, handle);
+}
+{% else %}
+
+/* Address of a slot in `{{ a.state_spec }}`, for the bus master's descriptor. */
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(size_t idx) {
+    return {{ snake_name }}_over_{{ a.op_name }}(&{{ snake_name }}_self, idx);
+}
+{% endif %}
+{% endfor %}
+
+/* Which slot a buffer address names, or `SIZE_MAX` for none. */
+static inline size_t {{ snake_name }}_slot_index_of_ptr(const void *ptr) {
+    return {{ snake_name }}_over_slot_index_of_ptr(&{{ snake_name }}_self, ptr);
+}
+
+/* Inspect a slot's current lifecycle state. */
+static inline sce_slot_state_t {{ snake_name }}_slot_state(size_t idx) {
+    return {{ snake_name }}_over_slot_state(&{{ snake_name }}_self, idx);
+}
+
+/* Number of slots currently free. */
+static inline size_t {{ snake_name }}_free_count(void) {
+    return {{ snake_name }}_over_free_count(&{{ snake_name }}_self);
+}
+{% else %}
+
+/* ── The pool over the header's own storage: one state per slot ──────
  *
- * docs/adr/0111 D4. The document declares no lending and no sharing, so the
- * pool keeps one `sce_slot_state_t` per slot beside its storage and lends
- * each slot whole, `SLOT_SIZE` bytes: the layout and the function bodies of
- * a pool before the book. */
+ * docs/adr/0111 D4. The pool over its own storage keeps one
+ * `sce_slot_state_t` per slot beside the slots and lends each slot whole,
+ * `SLOT_SIZE` bytes: the layout and the function bodies of a pool before
+ * the book, whatever else the header declares. */
 
 __attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
 static {{ snake_name }}_slot_t {{ snake_name }}_storage[{{ slot_count }}];

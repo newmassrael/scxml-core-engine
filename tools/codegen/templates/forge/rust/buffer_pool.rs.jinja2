@@ -37,17 +37,19 @@
 // `SlotNo`, a type with no value out of range, rather than through a
 // `usize` and a bounds check.
 //
-// docs/adr/0111 D4: a pool may be lent. A pool over storage the caller holds
-// (`over`) always is, and so is the pool over its own storage when the document
-// declares `<sce:lending>run-time</sce:lending>` or `<sce:sharing>shared`: it
-// lends a run-time count of slots of a run-time length under the build bounds,
-// with a headroom in front of a frame, names a lent slot by a generational
-// `SlotIndex` that crosses an interface, takes `&self` for every transition
-// over a book whose words `<sce:sharing>` chooses, and lends a received slot
-// to the events of its frame. A pool over its own storage in a document that
-// declares neither lends every slot whole: it is the slots' bytes and one state
-// byte per slot, its handle is the slot's number, and its transitions take
-// `&mut self`, so it pays for none of that (`Storage`).
+// docs/adr/0111 D4: the pool's storage type decides what it keeps, as a map's
+// storage does (docs/adr/0154). A pool over storage the caller holds (`over`,
+// `Over<'a>`, a `&'static mut` buffer the program owns among them) lends at
+// run time: a run-time count of slots of a run-time length under the build
+// bounds, with a headroom in front of a frame, a lent slot named by a
+// generational `SlotIndex` that crosses an interface, `&self` for every
+// transition over a book whose words `<sce:sharing>` chooses, and a received
+// slot lent to the events of its frame. The pool over its own storage
+// (`Owned`) lends every slot whole: it is the slots' bytes and one state byte
+// per slot, its handle is the slot's number, and its transitions take
+// `&mut self`, so it pays for none of that (`Storage`); only a `shared`
+// pool's own storage keeps the atomic book, since a driver context moves its
+// slots too.
 
 #![allow(clippy::all)]
 #![allow(unused_imports)]
@@ -105,11 +107,6 @@ pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 /// book of plain cells moved by whoever holds the drive, or `shared`, a
 /// book of atomics that a driver context moves too.
 pub const SHARING: &'static str = "{{ sharing }}";
-
-/// What a lending of the pool names at run time (`<sce:lending>`,
-/// docs/adr/0111 D4): `fixed`, every slot lent whole, or `run-time`, a
-/// run-time count and length and an index across an interface.
-pub const LENDING: &'static str = "{{ lending }}";
 
 {%- if needs_clean_extern or needs_invalidate_extern %}
 
@@ -467,18 +464,18 @@ pub trait Held {
 /// slot of a pool that lends at run time, and `()` for one of a pool that
 /// lends every slot whole, whose handle is then the slot's number and no
 /// larger. The default is the handle of the pool over its own storage
-/// (`{{ "u32" if lends else "()" }}` in this document).
+/// (`{{ "u32" if shared else "()" }}` here: `()` unless the pool is `shared`).
 ///
 /// Silently dropping a `Slot<CpuMut>` or `Slot<CpuRef>` leaks the
 /// underlying slot — the `#[must_use]` attribute makes rustc warn
 /// when this happens at the lexical level.
 #[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §synth-5-E lines 1162-1164"]
-pub struct Slot<S, G = {% if lends %}u32{% else %}(){% endif %}> {
+pub struct Slot<S, G = {% if shared %}u32{% else %}(){% endif %}> {
     no: SlotNo,
     generation: G,
     _state: PhantomData<fn() -> S>,
 }
-{% if not lends %}
+{% if not shared %}
 
 impl<S> Slot<S, ()> {
     /// Pool index of this slot. Read-only; useful for tracing and
@@ -730,11 +727,12 @@ impl<T: SlotStore> Storage for T {
     type Book = Book;
     type Generation = u32;
 }
-{% if lends %}
+{% if shared %}
 
 /// Storage the pool owns: `SLOT_COUNT` slots of `SLOT_SIZE` bytes, zero until
-/// a slot is written. The document lends at run time (`<sce:lending>` or
-/// `<sce:sharing>`, docs/adr/0111 D4), so the pool over it keeps the book.
+/// a slot is written. The pool is `shared` (docs/adr/0111 D4): a driver
+/// context moves its slots too, which one state per slot cannot be shared
+/// with, so the pool over it keeps the atomic book.
 pub struct Owned(core::cell::UnsafeCell<[SlotBytes; SLOT_COUNT]>);
 
 impl Owned {
@@ -761,9 +759,11 @@ unsafe impl SlotStore for Owned {
 {% else %}
 
 /// Storage the pool owns: `SLOT_COUNT` slots of `SLOT_SIZE` bytes, zero until
-/// a slot is written. The document lends every slot whole (docs/adr/0111 D4),
-/// so the pool over it keeps one state byte per slot and a handle is the slot's
-/// number: the layout, and the code, of a pool before the book.
+/// a slot is written. The pool over it lends every slot whole (docs/adr/0111
+/// D4), so it keeps one state byte per slot and a handle is the slot's number:
+/// the layout, and the code, of a pool before the book. A pool whose slots
+/// cross an interface by index is made `over` storage instead, a
+/// `&'static mut` buffer the program owns among it.
 #[repr(transparent)]
 pub struct Owned([SlotBytes; SLOT_COUNT]);
 
@@ -844,8 +844,8 @@ impl Book {
 /// armed slot and the session that opens another share the pool; `SLOT_COUNT`
 /// and `SLOT_SIZE` are the bounds the type reserves, and the pool lends
 /// `count()` slots of at most `slot_len()` bytes, each fixed when it is
-/// made. A pool over its own storage in a document that lends every slot whole
-/// keeps one state byte per slot, and its transitions take `&mut self`.
+/// made. The pool over its own storage (`Owned`) keeps one state byte per
+/// slot, and its transitions take `&mut self`, unless the pool is `shared`.
 #[repr(C)]
 pub struct {{ pascal_name }}<St: Storage = Owned> {
     /// The slots' bytes. First, so a pool that keeps a state per slot lies as
@@ -868,7 +868,7 @@ impl Default for {{ pascal_name }} {
         Self::new()
     }
 }
-{% if not lends %}
+{% if not shared %}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // The pool over its own storage, lending every slot whole (docs/adr/0111
@@ -1987,6 +1987,75 @@ impl Slot<{{ t.from_pascal }}, u32> {
 {% endif %}
 {% endfor %}
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// A link's transmit path, whatever the pool's storage
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// What a link's transmit path asks of the pool it encodes into: a whole slot,
+/// the bytes a frame is encoded into, those bytes again to hand to the driver,
+/// and the slot's return. Implemented for `&mut {{ pascal_name }}` over `Owned`,
+/// whose transitions take `&mut`, and for `&{{ pascal_name }}<St>` over storage
+/// that lends at run time, whose transitions take `&`; a link's `send` takes
+/// either, so the storage's type, not a declaration, decides how a host hands
+/// the pool to it (docs/adr/0111 D4).
+pub trait TxPool {
+    /// The handle of a slot lent for encoding.
+    type Slot;
+    /// Lend a whole slot for encoding, or `None` when every slot is out.
+    fn tx_acquire(&mut self) -> Option<Self::Slot>;
+    /// The bytes a frame is encoded into.
+    fn tx_room<'s>(&'s mut self, slot: &'s mut Self::Slot) -> &'s mut [u8];
+    /// The same bytes, read to hand the frame to the driver.
+    fn tx_bytes<'s>(&'s self, slot: &'s Self::Slot) -> &'s [u8];
+    /// Return the slot to the pool.
+    fn tx_return(&mut self, slot: Self::Slot);
+}
+{% if not shared %}
+
+impl TxPool for &mut {{ pascal_name }} {
+    type Slot = Slot<CpuMut, ()>;
+
+    fn tx_acquire(&mut self) -> Option<Self::Slot> {
+        self.pool_acquire_for_encode()
+    }
+
+    fn tx_room<'s>(&'s mut self, slot: &'s mut Self::Slot) -> &'s mut [u8] {
+        &mut slot.write(self)[..]
+    }
+
+    fn tx_bytes<'s>(&'s self, slot: &'s Self::Slot) -> &'s [u8] {
+        &slot.read(self)[..]
+    }
+
+    fn tx_return(&mut self, slot: Self::Slot) {
+        slot.pool_return(self);
+    }
+}
+{% endif %}
+
+impl<'p, St: SlotStore> TxPool for &'p {{ pascal_name }}<St> {
+    type Slot = Slot<CpuMut, u32>;
+
+    /// A lending of the pool's own slot length with no headroom, refused only
+    /// when every slot is out: the length and the headroom fit.
+    fn tx_acquire(&mut self) -> Option<Self::Slot> {
+        let pool: &'p {{ pascal_name }}<St> = *self;
+        pool.pool_acquire_for_encode(pool.slot_len(), 0).ok()
+    }
+
+    fn tx_room<'s>(&'s mut self, slot: &'s mut Self::Slot) -> &'s mut [u8] {
+        slot.write(*self)
+    }
+
+    fn tx_bytes<'s>(&'s self, slot: &'s Self::Slot) -> &'s [u8] {
+        slot.read(*self)
+    }
+
+    fn tx_return(&mut self, slot: Self::Slot) {
+        slot.pool_return(*self);
+    }
+}
+
 #[cfg(test)]
 mod generated_tests {
     use super::*;
@@ -2044,6 +2113,41 @@ mod generated_tests {
         assert_eq!(arena.0[0], 1, "the pool wrote the caller's bytes");
     }
 
+    /// docs/adr/0111 D4: storage the program owns for the whole run is lent the
+    /// same way: a pool over a `&'static mut` buffer names its slots by index.
+    #[test]
+    fn a_pool_over_a_static_buffer_lends_by_index() {
+        let arena: &'static mut Arena = Box::leak(Box::new(Arena::new()));
+        let len = ALIGNMENT as usize;
+        let pool: {{ pascal_name }}<Over<'static>> = {{ pascal_name }}::over(&mut arena.0, 1, len)
+            .ok()
+            .expect("one slot of the alignment");
+        let slot = pool.pool_acquire_for_encode(len, 0).expect("the slot");
+        let index = slot.into_index(&pool);
+        let back: Slot<CpuMut, u32> = pool.reclaim(index).expect("the index names the slot");
+        back.pool_return(&pool);
+        assert_eq!(pool.free_count(), 1);
+    }
+
+    /// A link's transmit path takes a pool over the caller's storage by `&`
+    /// (`TxPool`, docs/adr/0111 D4) and lends a whole slot of its length.
+    #[test]
+    fn a_link_takes_a_pool_over_caller_storage_by_reference() {
+        let mut arena = Arena::new();
+        let len = ALIGNMENT as usize;
+        let pool = {{ pascal_name }}::over(&mut arena.0, 1, len)
+            .ok()
+            .expect("one slot of the alignment");
+        let mut tx = &pool;
+        let mut slot = tx.tx_acquire().expect("a slot");
+        assert_eq!(tx.tx_room(&mut slot).len(), len, "the whole slot");
+        tx.tx_room(&mut slot)[0] = 7;
+        assert_eq!(tx.tx_bytes(&slot)[0], 7);
+        assert!(tx.tx_acquire().is_none(), "the one slot is out");
+        tx.tx_return(slot);
+        assert_eq!(pool.free_count(), 1);
+    }
+
     #[test]
     fn a_pool_over_a_short_or_misaligned_span_is_refused() {
         let mut arena = Arena::new();
@@ -2082,7 +2186,7 @@ mod generated_tests {
         }
     }
 
-{% if lends %}
+{% if shared %}
     #[test]
     fn pool_starts_with_all_slots_free() {
         let pool = {{ pascal_name }}::new();
@@ -2978,6 +3082,22 @@ mod generated_tests {
         assert!(unsafe { pool.rx_complete(SLOT_COUNT) }.is_none(), "out of range");
         slot.pool_return(&mut pool);
     }
+    /// A link's transmit path takes the pool over its own storage by `&mut`
+    /// (`TxPool`, docs/adr/0111 D4), as a send did before the book.
+    #[test]
+    fn a_link_takes_the_pool_over_its_own_storage_by_mut() {
+        let mut pool = {{ pascal_name }}::new();
+        {
+            let mut tx = &mut pool;
+            let mut slot = tx.tx_acquire().expect("a slot");
+            assert_eq!(tx.tx_room(&mut slot).len(), SLOT_SIZE, "the whole slot");
+            tx.tx_room(&mut slot)[0] = 7;
+            assert_eq!(tx.tx_bytes(&slot)[0], 7);
+            tx.tx_return(slot);
+        }
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
     // ── A pool that lends every slot whole (docs/adr/0111 D4) ──────────
     // Its storage keeps one state byte per slot and its handle is the slot's
     // number: the book, the generation and the run-time count and length are

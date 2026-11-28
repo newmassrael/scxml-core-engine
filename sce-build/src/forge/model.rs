@@ -6733,44 +6733,6 @@ impl PoolSharing {
     }
 }
 
-/// `<sce:lending>` on `<scxml sce:kind="buffer-pool">`: what a lending of the
-/// pool names at run time, which decides whether the pool keeps a book of its
-/// lendings or one state per slot (docs/adr/0111 D4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(rename_all = "kebab-case")]
-pub enum PoolLending {
-    /// Every slot is lent whole, the build's count of them, and named by its
-    /// handle alone: the pool keeps one state per slot and nothing else, and
-    /// a handle is the slot's number.
-    Fixed,
-    /// The pool lends a run-time count of slots, over its own storage or the
-    /// caller's, each lending names its length and a headroom, and a lent slot
-    /// crosses an interface by its number and the generation of the lending:
-    /// the pool keeps a book of every slot's lending.
-    RunTime,
-}
-
-impl PoolLending {
-    pub const ALL_NAMES: &'static [&'static str] = &["fixed", "run-time"];
-
-    pub fn from_attr(s: &str) -> Option<Self> {
-        match s {
-            "fixed" => Some(Self::Fixed),
-            "run-time" => Some(Self::RunTime),
-            _ => None,
-        }
-    }
-
-    /// The body text `<sce:lending>` spells this with.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Fixed => "fixed",
-            Self::RunTime => "run-time",
-        }
-    }
-}
-
 /// `<sce:variant>` on `<scxml sce:kind="buffer-pool">` — RFC §synth-5-M lines
 /// 2676-2698. The reassembly variant of §synth-5-E carries three additional
 /// fields (`max-fragments-per-message`, `reassembly-timeout-ms`,
@@ -6894,9 +6856,6 @@ pub struct BufferPoolModel {
     /// `<sce:sharing>` — who moves the pool's slots: `owner` (the
     /// default, when the element is absent) or `shared` (docs/adr/0111 D4).
     pub sharing: PoolSharing,
-    /// `<sce:lending>` — what a lending names at run time: `fixed` (the
-    /// default, when the element is absent) or `run-time` (docs/adr/0111 D4).
-    pub lending: PoolLending,
     /// `<sce:variant>` discriminator (RFC §synth-5-M line 2682). The
     /// `Default` arm covers the absence of `<sce:variant>` —
     /// regular RX/TX/stage pool behavior. `Reassembly` carries the
@@ -6908,16 +6867,6 @@ pub struct BufferPoolModel {
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-}
-
-impl BufferPoolModel {
-    /// Whether the pool keeps a book of its lendings (docs/adr/0111 D4): it
-    /// lends at run time, or a driver context moves its slots too, which a
-    /// state per slot cannot be shared with. A pool that does neither keeps
-    /// one state per slot, the layout and the code it had before the book.
-    pub fn lends(&self) -> bool {
-        self.lending == PoolLending::RunTime || self.sharing == PoolSharing::Shared
-    }
 }
 
 // ── Worker kind ────────────────────────────────────────────────

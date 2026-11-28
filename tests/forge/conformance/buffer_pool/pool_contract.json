@@ -1,18 +1,20 @@
 {
   "version": 1,
-  "description": "The buffer-pool kind's lending contract (docs/adr/0111 D4), run by the Rust arm (backends/rust/forge-conformance/tests/forge_buffer_pool.rs) and the C11 arm (backends/c/forge-runtime/tests/conformance/buffer_pool_test.c) against every pool of `pools`, each of which is a document in this directory that lends at run time (`<sce:lending>run-time</sce:lending>` or `<sce:sharing>shared</sce:sharing>`): a run-time count and length, a generation and a stale index are a lending pool's alone. A pool of `fixed_pools` lends every slot whole and keeps one state byte per slot, so no scenario runs against it; each arm holds it to the layout and the calls of a pool before the book instead. A scenario makes a pool (`make`: a run-time `count` over the pool's own storage, or `over` a span the caller holds, cut at `offset` bytes past an aligned arena) and runs its steps in order. A step's `slot` and `out` name a handle register and `index` an index register, 0 to 7. Every step gives its `expect` but `write`, `read`, `sent`, `index` and `into_index`, which answer nothing and give none; a `lent` of no slot expects `null`. The C11 arm learns a construction's refusal as `false` alone, so it checks `ok` against any refusal; every other outcome both arms check alike.",
+  "description": "The buffer-pool kind's lending contract (docs/adr/0111 D4), run by the Rust arm (backends/rust/forge-conformance/tests/forge_buffer_pool.rs) and the C11 arm (backends/c/forge-runtime/tests/conformance/buffer_pool_test.c) against the lending type of every pool of `pools`, each of which is a document in this directory: Rust `Pool<Over<'_>>`, C11 `<pool>_over_t`. A run-time count and length, a generation and a stale index are the lending type's alone (docs/adr/0111 D4); the pool over its own storage keeps one state byte per slot, runs no scenario, and each arm holds it to the layout and the calls of a pool before the book instead. A scenario makes a pool (`make`: `over` a span the caller holds, cut at `offset` bytes past an aligned arena into `count` slots of `len` bytes) and runs its steps in order. A step's `slot` and `out` name a handle register and `index` an index register, 0 to 7. Every step gives its `expect` but `write`, `read`, `sent`, `index` and `into_index`, which answer nothing and give none; a `lent` of no slot expects `null`. The C11 arm learns a construction's refusal as `false` alone, so it checks `ok` against any refusal; every other outcome both arms check alike.",
   "pools": [
     "pool_conformance_owner",
     "pool_conformance_shared"
-  ],
-  "fixed_pools": [
-    "pool_conformance_fixed"
   ],
   "scenarios": [
     {
       "id": "a_count_within_the_bound_lends_that_many",
       "make": {
-        "count": 2
+        "over": {
+          "span": 128,
+          "offset": 0,
+          "count": 2,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -72,7 +74,12 @@
     {
       "id": "a_count_of_none_is_refused",
       "make": {
-        "count": 0
+        "over": {
+          "span": 0,
+          "offset": 0,
+          "count": 0,
+          "len": 64
+        }
       },
       "expect": "count",
       "steps": []
@@ -80,7 +87,12 @@
     {
       "id": "a_count_past_the_bound_is_refused",
       "make": {
-        "count": 5
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 5,
+          "len": 64
+        }
       },
       "expect": "count",
       "steps": []
@@ -88,7 +100,12 @@
     {
       "id": "a_lending_names_its_length_and_its_headroom",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -277,7 +294,12 @@
     {
       "id": "an_index_rebuilds_its_handle_once",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -329,7 +351,12 @@
     {
       "id": "a_stale_index_is_refused_and_counted",
       "make": {
-        "count": 1
+        "over": {
+          "span": 64,
+          "offset": 0,
+          "count": 1,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -404,7 +431,12 @@
     {
       "id": "an_index_given_up_in_one_state_does_not_rebuild_another",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -448,7 +480,12 @@
     {
       "id": "a_generation_advances_each_time_a_slot_returns",
       "make": {
-        "count": 1
+        "over": {
+          "span": 64,
+          "offset": 0,
+          "count": 1,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -523,7 +560,12 @@
     {
       "id": "a_take_writes_the_prefix_in_front_of_the_frame",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -599,7 +641,12 @@
     {
       "id": "a_prefix_wider_than_the_headroom_is_refused_and_returns_the_slot",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -653,7 +700,12 @@
     {
       "id": "a_frame_past_its_room_is_not_armed",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -707,7 +759,12 @@
     {
       "id": "a_slot_lent_to_events_returns_with_its_last_holder",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [
@@ -800,7 +857,12 @@
     {
       "id": "a_received_frame_reads_back_as_the_device_wrote_it",
       "make": {
-        "count": 4
+        "over": {
+          "span": 256,
+          "offset": 0,
+          "count": 4,
+          "len": 64
+        }
       },
       "expect": "ok",
       "steps": [

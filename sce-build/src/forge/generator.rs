@@ -736,16 +736,6 @@ pub struct ImportContext {
     #[serde(skip)]
     pub buffer_pool_slot_size: Option<u32>,
 
-    /// For buffer-pool imports: whether the imported pool keeps the book of
-    /// its lendings ([`BufferPoolModel::lends`], docs/adr/0111 D4), which
-    /// decides how a link that encodes into it takes it and lends a slot of
-    /// it. `false` for every other import and for a buffer-pool import whose
-    /// model failed to parse during enrichment.
-    ///
-    /// [`BufferPoolModel::lends`]: crate::forge::model::BufferPoolModel::lends
-    #[serde(skip)]
-    pub buffer_pool_lends: bool,
-
     /// For queue imports: whether the imported document declares `consumers`
     /// `many`, captured at enrichment time from the parsed `QueueModel`.
     /// Consumed by the worker's inbox check
@@ -1873,7 +1863,6 @@ fn resolve_single_import(
         codec_parts_of: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
-        buffer_pool_lends: false,
         queue_consumers_many: false,
         bc_element_snake: None,
         bc_element: None,
@@ -31395,11 +31384,6 @@ fn render_buffer_pool_rust(
         // cells for `owner` and atomics for `shared`.
         sharing => m.sharing.as_str(),
         shared => m.sharing == crate::forge::model::PoolSharing::Shared,
-        // Whether the pool's own storage keeps the book of its lendings
-        // (`<sce:lending>run-time` or `shared`, docs/adr/0111 D4), or one
-        // state per slot, the layout and the code a pool had before the book.
-        lending => m.lending.as_str(),
-        lends => m.lends(),
         // C5 cache-maintenance: template emits cache_clean +
         // (conditionally) cache_invalidate when cache_policy=maintain.
         cache_maintain => cache_maintain,
@@ -34677,16 +34661,25 @@ fn render_buffer_pool_c(
     // `check_analyzer_annotations_emitted_c11` below fails the render if
     // the template drops one, so a missing key cannot degrade to
     // silently-inert analyzer coverage.
-    let analyzer: std::collections::BTreeMap<String, String> =
-        crate::forge::ownership_contract::POOL_CONTRACTS
-            .iter()
-            .map(|c| {
-                (
-                    c.suffix.to_string(),
-                    c.rendered_lines(&snake_name).join("\n"),
-                )
-            })
-            .collect();
+    //
+    // docs/adr/0111 D4: every contract is rendered for the lending pool's
+    // function too, `<pool>_over<suffix>` keyed `_over<suffix>`, whose pool is
+    // its first argument; one only the lending pool declares is rendered for
+    // it alone.
+    let mut analyzer: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for c in crate::forge::ownership_contract::POOL_CONTRACTS.iter() {
+        if !c.over_only {
+            analyzer.insert(
+                c.suffix.to_string(),
+                c.rendered_lines(&snake_name).join("\n"),
+            );
+        }
+        analyzer.insert(
+            format!("_over{}", c.suffix),
+            c.rendered_lines_over(&snake_name).join("\n"),
+        );
+    }
     // Lifecycle-FSM context shared by both backends: markers, the
     // runtime seam, and the per-edge cache resolution.
     let cache_maintain = m.cache_policy == crate::forge::model::CachePolicy::Maintain;
@@ -34707,10 +34700,6 @@ fn render_buffer_pool_c(
         // `<sce:sharing>` (docs/adr/0111 D4), as for the Rust book.
         sharing => m.sharing.as_str(),
         shared => m.sharing == crate::forge::model::PoolSharing::Shared,
-        // Whether the pool keeps the book of its lendings or one state per
-        // slot (docs/adr/0111 D4), as for the Rust pool's own storage.
-        lending => m.lending.as_str(),
-        lends => m.lends(),
         analyzer => analyzer,
         // C5 cache-maintenance gating; mirror of Rust template
         // context shape so per-backend template authors can reach for
@@ -34736,7 +34725,7 @@ fn render_buffer_pool_c(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
-    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, m.lends(), &rendered)?;
+    check_analyzer_annotations_emitted_c11(&m.name, &snake_name, &rendered)?;
     if variant_reassembly {
         check_reassembly_peer_id_zid_invariant_c11(&m.name, &snake_name, &rendered)?;
     }
@@ -34756,27 +34745,35 @@ fn render_buffer_pool_c(
 fn check_analyzer_annotations_emitted_c11(
     pool_name: &str,
     snake_name: &str,
-    lends: bool,
     rendered: &str,
 ) -> Result<(), ForgeError> {
-    // A pool that keeps one state per slot declares none of the functions a
-    // lent slot crosses an interface by (docs/adr/0111 D4), so it owes none
-    // of their annotations.
-    for contract in crate::forge::ownership_contract::POOL_CONTRACTS
-        .iter()
-        .filter(|contract| lends || !contract.lends_only)
-    {
-        for line in contract.rendered_lines(snake_name) {
-            if !rendered.contains(&line) {
-                return Err(ForgeError::from(GenerateError::TemplateRender(format!(
-                    "buffer_pool.h.jinja2 (c11): pool `{pool_name}` rendered without \
-                     the analyzer-layer annotation for `{}`:\n  {line}\n\
-                     The template must emit `analyzer[\"{}\"]` immediately above that \
-                     declaration; without it, non-Clang toolchains lose the \
-                     ownership contract entirely (RFC §synth-5-E lines 1349-1365).",
-                    contract.qualified_name(snake_name),
-                    contract.suffix,
-                ))));
+    // docs/adr/0111 D4: the lending pool, `<pool>_over_t`, declares every
+    // function, and the pool over the header's own storage every one but those
+    // a lent slot crosses an interface by.
+    for contract in crate::forge::ownership_contract::POOL_CONTRACTS.iter() {
+        let owned = (!contract.over_only).then(|| {
+            (
+                contract.qualified_name(snake_name),
+                contract.suffix.to_string(),
+                contract.rendered_lines(snake_name),
+            )
+        });
+        let over = (
+            contract.qualified_name_over(snake_name),
+            format!("_over{}", contract.suffix),
+            contract.rendered_lines_over(snake_name),
+        );
+        for (name, key, lines) in owned.into_iter().chain(std::iter::once(over)) {
+            for line in lines {
+                if !rendered.contains(&line) {
+                    return Err(ForgeError::from(GenerateError::TemplateRender(format!(
+                        "buffer_pool.h.jinja2 (c11): pool `{pool_name}` rendered without \
+                         the analyzer-layer annotation for `{name}`:\n  {line}\n\
+                         The template must emit `analyzer[\"{key}\"]` immediately above that \
+                         declaration; without it, non-Clang toolchains lose the \
+                         ownership contract entirely (RFC §synth-5-E lines 1349-1365).",
+                    ))));
+                }
             }
         }
     }
@@ -54243,7 +54240,6 @@ mod tests {
             codec_parts_of: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
-            buffer_pool_lends: false,
             queue_consumers_many: false,
             bc_element_snake: None,
             bc_element: None,
@@ -55182,7 +55178,6 @@ mod tests {
                 codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
-                buffer_pool_lends: false,
                 queue_consumers_many: false,
                 bc_element_snake: None,
                 bc_element: None,
@@ -55264,7 +55259,6 @@ mod tests {
                 codec_parts_of: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
-                buffer_pool_lends: false,
                 queue_consumers_many: false,
                 bc_element_snake: None,
                 bc_element: None,

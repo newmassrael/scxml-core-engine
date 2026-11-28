@@ -181,25 +181,15 @@ static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}(
     result.pool_exhausted = false;
     result.codec_status = SCE_FORGE_CODEC_OK;
     result.link_status = SCE_FORGE_LINK_OK;
-{% if events.tx_pool.lends %}
-    /* A lending of the pool's own slot length with no headroom is refused
-       only when every slot is out (docs/adr/0111 D4). */
-    slot = {{ events.tx_pool.prefix }}_pool_acquire_for_encode({{ events.tx_pool.prefix }}_slot_len(), 0u);
-{% else %}
-    /* The pool keeps a state per slot and lends each whole (docs/adr/0111 D4). */
+    /* The pool over the header's own storage lends a slot whole, `SLOT_SIZE`
+       bytes (docs/adr/0111 D4). */
     slot = {{ events.tx_pool.prefix }}_pool_acquire_for_encode();
-{% endif %}
     if (slot.state == SCE_SLOT_INVALID) {
         result.pool_exhausted = true;
         return result;
     }
-{% if events.tx_pool.lends %}
-    result.codec_status = {{ row.codec_prefix }}_encode_to_buf(
-        value, {{ events.tx_pool.prefix }}_slot_write(&slot), {{ events.tx_pool.prefix }}_slot_capacity(&slot), &length);
-{% else %}
     result.codec_status = {{ row.codec_prefix }}_encode_to_buf(
         value, {{ events.tx_pool.prefix }}_slot_write(&slot), {{ events.tx_pool.upper }}_SLOT_SIZE, &length);
-{% endif %}
     if (result.codec_status == SCE_FORGE_CODEC_OK) {
         sce_forge_link_tx_frame_t frame;
         frame.data = {{ events.tx_pool.prefix }}_slot_read(&slot);
@@ -207,6 +197,36 @@ static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}(
         result.link_status = self->driver.ops->tx(self->driver.self, frame);
     }
     (void){{ events.tx_pool.prefix }}_pool_return(&slot);
+    return result;
+}
+
+/* The same transmit path into a slot of `pool`, a pool of the transmit pool's
+ * lending type over storage the caller holds (docs/adr/0111 D4): a lending of
+ * the pool's slot length with no headroom, refused only when every slot is
+ * out. The pool's type, not a declaration, chooses which path a host calls. */
+static inline {{ snake_name }}_send_result_t {{ prefix }}_send_{{ row.snake }}_over(
+    {{ self_type }} *self, {{ events.tx_pool.prefix }}_over_t *pool, const {{ row.codec_type }} *value) {
+    {{ snake_name }}_send_result_t result;
+    size_t length = 0;
+    sce_slot_handle_t slot;
+    result.pool_exhausted = false;
+    result.codec_status = SCE_FORGE_CODEC_OK;
+    result.link_status = SCE_FORGE_LINK_OK;
+    slot = {{ events.tx_pool.prefix }}_over_pool_acquire_for_encode(pool, {{ events.tx_pool.prefix }}_over_slot_len(pool), 0u);
+    if (slot.state == SCE_SLOT_INVALID) {
+        result.pool_exhausted = true;
+        return result;
+    }
+    result.codec_status = {{ row.codec_prefix }}_encode_to_buf(
+        value, {{ events.tx_pool.prefix }}_over_slot_write(pool, &slot),
+        {{ events.tx_pool.prefix }}_over_slot_capacity(pool, &slot), &length);
+    if (result.codec_status == SCE_FORGE_CODEC_OK) {
+        sce_forge_link_tx_frame_t frame;
+        frame.data = {{ events.tx_pool.prefix }}_over_slot_read(pool, &slot);
+        frame.len = length;
+        result.link_status = self->driver.ops->tx(self->driver.self, frame);
+    }
+    (void){{ events.tx_pool.prefix }}_over_pool_return(pool, &slot);
     return result;
 }
 {% else %}

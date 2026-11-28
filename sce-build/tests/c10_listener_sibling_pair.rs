@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass,
-    LinkInstanceRole, LinkModel, PoolLending, PoolSharing, ReassemblyConfig, ResolvedLinkInstance,
+    LinkInstanceRole, LinkModel, PoolSharing, ReassemblyConfig, ResolvedLinkInstance,
 };
 use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc};
 use sce_build::model::{SCXMLModel, State};
@@ -353,7 +353,6 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
         dma_channel: None,
         cache_policy: CachePolicy::None,
         sharing: PoolSharing::Owner,
-        lending: PoolLending::Fixed,
         variant: BufferPoolVariant::Reassembly(ReassemblyConfig {
             max_fragments_per_message: 8,
             reassembly_timeout_ms: 100,

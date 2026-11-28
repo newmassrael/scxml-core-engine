@@ -3895,14 +3895,6 @@
               ],
               "type": "string"
             },
-            "lending": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/PoolLending"
-                }
-              ],
-              "description": "`<sce:lending>` — what a lending names at run time: `fixed` (the default, when the element is absent) or `run-time` (docs/adr/0111 D4)."
-            },
             "name": {
               "type": "string"
             },
@@ -3954,7 +3946,6 @@
             "alignment",
             "cache_policy",
             "kind",
-            "lending",
             "name",
             "section",
             "sharing",
@@ -6757,25 +6748,6 @@
         "id"
       ],
       "type": "object"
-    },
-    "PoolLending": {
-      "description": "`<sce:lending>` on `<scxml sce:kind=\"buffer-pool\">`: what a lending of the pool names at run time, which decides whether the pool keeps a book of its lendings or one state per slot (docs/adr/0111 D4).",
-      "oneOf": [
-        {
-          "description": "Every slot is lent whole, the build's count of them, and named by its handle alone: the pool keeps one state per slot and nothing else, and a handle is the slot's number.",
-          "enum": [
-            "fixed"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "The pool lends a run-time count of slots, over its own storage or the caller's, each lending names its length and a headroom, and a lent slot crosses an interface by its number and the generation of the lending: the pool keeps a book of every slot's lending.",
-          "enum": [
-            "run-time"
-          ],
-          "type": "string"
-        }
-      ]
     },
     "PoolSharing": {
       "description": "`<sce:sharing>` on `<scxml sce:kind=\"buffer-pool\">`: who moves the pool's slots, which decides what its state book is made of (docs/adr/0111 D4).",

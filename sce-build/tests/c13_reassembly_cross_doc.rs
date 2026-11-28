@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass, LinkModel,
-    PoolLending, PoolSharing, ReassemblyConfig,
+    PoolSharing, ReassemblyConfig,
 };
 use sce_build::mesh::deploy::{
     parse_deploy_str, resolve_link_rx_pool_slot_count, validate_links_burst_invariants,
@@ -101,7 +101,6 @@ fn default_pool(name: &str, slot_count: u32, slot_size: u32) -> BufferPoolModel 
         dma_channel: None,
         cache_policy: CachePolicy::None,
         sharing: PoolSharing::Owner,
-        lending: PoolLending::Fixed,
         variant: BufferPoolVariant::Default,
         source_location: None,
     }
@@ -122,7 +121,6 @@ fn reassembly_pool(
         dma_channel: None,
         cache_policy: CachePolicy::None,
         sharing: PoolSharing::Owner,
-        lending: PoolLending::Fixed,
         variant: BufferPoolVariant::Reassembly(ReassemblyConfig {
             max_fragments_per_message: max_fragments,
             reassembly_timeout_ms: 100,
