@@ -3,14 +3,17 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-formal-toolchain.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE formal toolchain (wire schema v1)",
-  "description": "The tools the formal judges run (TLC, Verus, Apalache and Storm) and the Java runtime TLC and Apalache run on, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
+  "description": "The tools the formal judges run (TLC, Verus, Apalache, Storm, TLAPS, Kani and CBMC) and the Java runtime TLC and Apalache run on, each with its release, where it is fetched from and the sha256 of what is fetched (docs/adr/0146, D3). Kept in sce-build/src/formal/toolchain.json, compiled into sce-codegen and printed by `sce-codegen formal toolchain`, so a consumer's cache key or installer reads the pins of the revision it builds. Authoritative reader is sce-build/src/formal/toolchain.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": [
     "tlc",
     "verus",
     "apalache",
     "java",
-    "storm"
+    "storm",
+    "tlaps",
+    "kani",
+    "cbmc"
   ],
   "additionalProperties": false,
   "properties": {
@@ -71,6 +74,50 @@
         ]
       },
       "description": "Storm, the probabilistic model checker of the level of quantity (docs/adr/0119, D3): the release's Debian 12 package for x64, unpacked and never installed, whose usr/bin/storm-<version> is run with the libraries of its usr/lib; the arithmetic and solver libraries it asks of the system are named by the host image and bx.toml."
+    },
+    "tlaps": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "not": {
+        "required": [
+          "toolchain"
+        ]
+      },
+      "description": "TLAPS, the TLA+ proof system (docs/adr/0146, D3): the release's installer for Linux on x64, which unpacks tlapm and its back ends, builds Isabelle's heaps and checks an example proof; the judge runs its bin/tlaps."
+    },
+    "kani": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "required": [
+        "toolchain"
+      ],
+      "properties": {
+        "toolchain": {
+          "type": "string",
+          "pattern": "^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The dated nightly Rust the bundle was built against, which its rust-toolchain-version names and Kani runs on."
+        }
+      },
+      "description": "Kani, the model checker of Rust (docs/adr/0146, D3): the release bundle for Linux on x64, unpacked as cargo kani setup unpacks it beside a link to the Rust release it was built against; the judge runs its bin/kani."
+    },
+    "cbmc": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/pin"
+        }
+      ],
+      "not": {
+        "required": [
+          "toolchain"
+        ]
+      },
+      "description": "CBMC, the model checker of C (docs/adr/0146, D3; ADR 0156, D13): the release's Debian package for Ubuntu 24.04 on x64, unpacked and never installed, whose usr/bin/cbmc the judge runs by its bin/cbmc; it is pinned apart from the CBMC Kani's bundle carries."
     }
   },
   "definitions": {

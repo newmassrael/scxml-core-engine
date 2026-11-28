@@ -28,6 +28,15 @@
 //! are named where a gate's system packages are, in the host image
 //! (docs/adr/0145) and in `bx.toml` for a build machine; the package is
 //! unpacked, never installed, and its program is run with its own libraries.
+//!
+//! TLAPS, the TLA+ proof system, and Kani, the model checker of Rust, are pinned
+//! as the others are (docs/adr/0146, D3): TLAPS for the theorems of arithmetic
+//! whose size is essential and no bound of a model checker reaches, Kani for
+//! harnesses generated from the contracts of a seam. Kani runs on the Rust
+//! release its bundle was built against, kept where `scripts/install_rust.sh`
+//! keeps every declared release, as the one Verus runs on is. CBMC, the model
+//! checker of C, is pinned on its own for the harnesses of C11 seams (ADR 0156,
+//! D13), apart from the CBMC Kani's bundle carries.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -105,6 +114,47 @@ pub struct StormPin {
     pub sha256: String,
 }
 
+/// TLAPS, the TLA+ proof system: the release's installer for Linux on x64, a
+/// program that carries the tree it unpacks (`tlapm`, its back ends Zenon,
+/// Isabelle, Z3 and LS4, and the standard modules of proofs), builds Isabelle's
+/// heaps in it and checks an example proof with them. The last stable release:
+/// the `1.6.0-pre` of the same project is a rolling pre-release whose asset is
+/// replaced, as TLC's `v1.8.0` is.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TlapsPin {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
+/// Kani, the bounded model checker of Rust: the release bundle for Linux on x64,
+/// which `cargo kani setup` fetches, with the dated nightly it was built
+/// against. The bundle names that nightly in its `rust-toolchain-version`, and
+/// the installer refuses a bundle that names another.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KaniPin {
+    pub version: String,
+    pub toolchain: String,
+    pub url: String,
+    pub sha256: String,
+}
+
+/// CBMC, the bounded model checker of C, for the harnesses of C11 seams: the
+/// release's Debian package for Ubuntu 24.04 on x64, unpacked and never
+/// installed, whose `usr/bin/cbmc` is run with the programs of its `usr/bin`
+/// first on the search path. It asks the system for the C and C++ runtimes and
+/// for `gcc`, which preprocesses the C it reads. Kani's bundle carries a CBMC
+/// of its own, built for it, which this pin does not replace.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CbmcPin {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+}
+
 /// Every pinned tool.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +164,9 @@ pub struct Toolchain {
     pub apalache: ApalachePin,
     pub java: JavaPin,
     pub storm: StormPin,
+    pub tlaps: TlapsPin,
+    pub kani: KaniPin,
+    pub cbmc: CbmcPin,
 }
 
 /// The pins this binary was built with.
@@ -180,6 +233,31 @@ pub fn java_place(pin: &JavaPin) -> Result<PathBuf, FormalError> {
 /// `bx.toml` declares for a build machine.
 pub fn storm_place(pin: &StormPin) -> Result<PathBuf, FormalError> {
     Ok(home()?.join(".local").join("storm").join(&pin.version))
+}
+
+/// Where the pinned TLAPS is installed: `~/.local/tlaps/<version>`, the place
+/// `bx.toml` declares for a build machine.
+pub fn tlaps_place(pin: &TlapsPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("tlaps").join(&pin.version))
+}
+
+/// Where the pinned Kani is unpacked: `~/.local/kani/<version>`, the place
+/// `bx.toml` declares for a build machine.
+pub fn kani_place(pin: &KaniPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("kani").join(&pin.version))
+}
+
+/// Where the Rust release Kani runs on is: `~/.local/rust/<release>`, where
+/// `scripts/install_rust.sh` puts every declared release, and where the link
+/// `toolchain` of an unpacked Kani points.
+pub fn kani_rust_place(pin: &KaniPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("rust").join(&pin.toolchain))
+}
+
+/// Where the pinned CBMC is unpacked: `~/.local/cbmc/<version>`, the place
+/// `bx.toml` declares for a build machine.
+pub fn cbmc_place(pin: &CbmcPin) -> Result<PathBuf, FormalError> {
+    Ok(home()?.join(".local").join("cbmc").join(&pin.version))
 }
 
 /// The program `bin/java` of the Java runtime whose home is `home`.
@@ -310,6 +388,75 @@ pub fn admitted_storm(pin: &StormPin) -> Result<PathBuf, FormalError> {
         return Err(unavailable(
             "Storm",
             format!("no Storm at {}: sce-codegen formal install", tool.display()),
+        ));
+    }
+    Ok(tool)
+}
+
+/// The pinned TLAPS, found: the program `bin/tlaps` under the installed
+/// release. It is not admitted by digest here, as Apalache is not: what was
+/// admitted is the installer it was installed by, by `formal install`.
+pub fn admitted_tlaps(pin: &TlapsPin) -> Result<PathBuf, FormalError> {
+    let tool = tlaps_place(pin)?.join("bin").join("tlaps");
+    if !tool.is_file() {
+        return Err(unavailable(
+            "TLAPS",
+            format!("no TLAPS at {}: sce-codegen formal install", tool.display()),
+        ));
+    }
+    Ok(tool)
+}
+
+/// The pinned Kani and the Rust release it runs on, found: the program
+/// `bin/kani` under the unpacked bundle, and the release its link `toolchain`
+/// points to. Kani is not admitted by digest here, as Verus is not: what was
+/// admitted is the bundle it was unpacked from, by `formal install`.
+pub fn admitted_kani(pin: &KaniPin) -> Result<PathBuf, FormalError> {
+    let place = kani_place(pin)?;
+    let tool = place.join("bin").join("kani");
+    if !tool.is_file() {
+        return Err(unavailable(
+            "Kani",
+            format!("no Kani at {}: sce-codegen formal install", tool.display()),
+        ));
+    }
+    let rust = kani_rust_place(pin)?;
+    if !rust.join("lib").is_dir() {
+        return Err(unavailable(
+            "the Rust release Kani runs on",
+            format!(
+                "no Rust {} at {}: scripts/install_rust.sh --declared {} in this repository installs it there",
+                pin.toolchain,
+                rust.display(),
+                pin.toolchain
+            ),
+        ));
+    }
+    if !place.join("toolchain").join("lib").is_dir() {
+        return Err(unavailable(
+            "the Rust release Kani runs on",
+            format!(
+                "{} does not lead to Rust {} at {}: it was installed under another home; \
+                 remove {} and run sce-codegen formal install",
+                place.join("toolchain").display(),
+                pin.toolchain,
+                rust.display(),
+                place.display()
+            ),
+        ));
+    }
+    Ok(tool)
+}
+
+/// The pinned CBMC, found: the program `bin/cbmc` under the unpacked package.
+/// It is not admitted by digest here, as Storm is not: what was admitted is the
+/// package it was unpacked from, by `formal install`.
+pub fn admitted_cbmc(pin: &CbmcPin) -> Result<PathBuf, FormalError> {
+    let tool = cbmc_place(pin)?.join("bin").join("cbmc");
+    if !tool.is_file() {
+        return Err(unavailable(
+            "CBMC",
+            format!("no CBMC at {}: sce-codegen formal install", tool.display()),
         ));
     }
     Ok(tool)
@@ -452,6 +599,47 @@ pub fn install_storm(pin: &StormPin, place: &Path) -> Result<Installed, FormalEr
     Ok(Installed::Fetched(place.to_path_buf()))
 }
 
+/// Install the pinned TLAPS into `place` (`tlaps_place`), unless it is
+/// there: the release's installer, admitted by its digest and run as its
+/// authors run it, which unpacks the release, builds Isabelle's heaps and
+/// checks an example proof; the line of Isabelle's settings that names the
+/// heaps is then written relative to Isabelle's own directory, so the tree is
+/// whole where it is moved. `bin/tlaps` is `tlapm` run with the back ends of
+/// its release.
+pub fn install_tlaps(pin: &TlapsPin, place: &Path) -> Result<Installed, FormalError> {
+    if place.join("bin").join("tlaps").is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer("TLAPS", "tlaps", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// Install the pinned Kani into `place` (`kani_place`), unless it is there:
+/// the release bundle, admitted by its digest and unpacked as
+/// `cargo kani setup` unpacks it, with the link `toolchain` to the Rust release
+/// it was built against (`kani_rust_place`), and `bin/kani` and
+/// `bin/cargo-kani`, its driver run with no rustup. The Rust release is
+/// installed by `scripts/install_rust.sh`, not here.
+pub fn install_kani(pin: &KaniPin, place: &Path) -> Result<Installed, FormalError> {
+    if place.join("bin").join("kani").is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer("Kani", "kani", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
+/// Install the pinned CBMC into `place` (`cbmc_place`), unless it is there:
+/// the Debian package, admitted by its digest and unpacked, never installed,
+/// with `bin/cbmc`, the package's program run with the programs of its package
+/// first on the search path.
+pub fn install_cbmc(pin: &CbmcPin, place: &Path) -> Result<Installed, FormalError> {
+    if place.join("bin").join("cbmc").is_file() {
+        return Ok(Installed::Present(place.to_path_buf()));
+    }
+    run_installer("CBMC", "cbmc", pin, place)?;
+    Ok(Installed::Fetched(place.to_path_buf()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,6 +653,9 @@ mod tests {
             ("apalache", &pins.apalache.sha256, &pins.apalache.url),
             ("java", &pins.java.sha256, &pins.java.url),
             ("storm", &pins.storm.sha256, &pins.storm.url),
+            ("tlaps", &pins.tlaps.sha256, &pins.tlaps.url),
+            ("kani", &pins.kani.sha256, &pins.kani.url),
+            ("cbmc", &pins.cbmc.sha256, &pins.cbmc.url),
         ] {
             assert_eq!(sha256.len(), 64, "{tool}: a sha256 is 64 hex digits");
             assert!(
@@ -498,6 +689,48 @@ mod tests {
             "the Storm fetched is the Debian 12 package for x64 of the release the pin names, \
              whose program the installer finds as usr/bin/storm-<version>: {}",
             pins.storm.url
+        );
+        assert!(
+            pins.tlaps.url.ends_with(&format!(
+                "/tlaps-{}-x86_64-linux-gnu-inst.bin",
+                pins.tlaps.version
+            )),
+            "the TLAPS fetched is the installer for Linux on x64 of the release the pin names: {}",
+            pins.tlaps.url
+        );
+        assert!(
+            pins.kani.url.ends_with(&format!(
+                "/kani-{0}/kani-{0}-x86_64-unknown-linux-gnu.tar.gz",
+                pins.kani.version
+            )),
+            "the Kani fetched is the bundle for Linux on x64 of the release the pin names, \
+             which the installer unpacks as kani-<version>/: {}",
+            pins.kani.url
+        );
+        assert!(
+            pins.cbmc.url.ends_with(&format!(
+                "/cbmc-{0}/ubuntu-24.04-cbmc-{0}-Linux.deb",
+                pins.cbmc.version
+            )),
+            "the CBMC fetched is the Ubuntu 24.04 package for x64 of the release the pin names, \
+             the system of the host image: {}",
+            pins.cbmc.url
+        );
+        let date = pins
+            .kani
+            .toolchain
+            .strip_prefix("nightly-")
+            .expect("Kani is built against a nightly");
+        assert!(
+            date.len() == 10
+                && date.char_indices().all(|(at, c)| if at == 4 || at == 7 {
+                    c == '-'
+                } else {
+                    c.is_ascii_digit()
+                }),
+            "Kani's Rust is a dated nightly, which scripts/install_rust.sh installs and a \
+             channel that moves is not: {}",
+            pins.kani.toolchain
         );
     }
 
@@ -548,7 +781,11 @@ mod tests {
         let pins: serde_json::Value =
             serde_json::from_str(TOOLCHAIN_JSON).expect("the pins are JSON");
         let tools = pins.as_object().expect("the pins are an object of tools");
-        assert_eq!(tools.len(), 5, "TLC, Verus, Apalache, Java and Storm");
+        assert_eq!(
+            tools.len(),
+            8,
+            "TLC, Verus, Apalache, Java, Storm, TLAPS, Kani and CBMC"
+        );
         for (key, pin) in tools {
             let fields = pin.as_object().expect("a pin is an object");
             for (field, value) in fields {
@@ -586,6 +823,11 @@ mod tests {
             "verus_wrapper >\"$built/bin/verus\"",
             "apalache_wrapper >\"$built/bin/apalache\"",
             "storm_wrapper >\"$built/bin/storm\"",
+            "tlaps_wrapper >\"$built/bin/tlaps\"",
+            "cbmc_wrapper >\"$built/bin/cbmc\"",
+            "kani_wrapper \"$toolchain\" standalone >\"$built/bin/kani\"",
+            "kani_wrapper \"$toolchain\" cargo >\"$built/bin/cargo-kani\"",
+            "ln -s \"$HOME/.local/rust/$toolchain\" \"$built/toolchain\"",
             "built=\"$unpacked/jdk-$version-jre\"",
             "mkdir -p \"$built/modules\"",
         ] {
@@ -598,6 +840,9 @@ mod tests {
             "echo \"verus $version\"",
             "echo \"apalache $version\"",
             "echo \"storm $version\"",
+            "echo \"tlaps $version\"",
+            "echo \"kani $version\"",
+            "echo \"cbmc $version\"",
         ] {
             assert!(
                 INSTALLER.contains(answer),
@@ -732,5 +977,213 @@ mod tests {
         );
         assert_eq!(std::fs::read(held.join("kept")).expect("kept"), b"kept");
         assert!(!java_program(&held).exists());
+    }
+
+    /// Make `path` a program its owner may run.
+    #[cfg(target_os = "linux")]
+    fn executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+            .expect("made runnable");
+    }
+
+    /// What a program prints when it is run with `args`.
+    #[cfg(target_os = "linux")]
+    fn said(program: &Path, args: &[&str]) -> String {
+        let ran = Command::new(program)
+            .args(args)
+            .output()
+            .expect("the program runs");
+        assert!(ran.status.success(), "{} ran: {:?}", program.display(), ran);
+        String::from_utf8(ran.stdout).expect("text")
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn kani_is_unpacked_beside_a_link_to_its_rust_and_run_with_no_rustup() {
+        let dir = super::super::WorkDir::new("test-kani").expect("a working directory");
+        let version = "0.0.0";
+        let root = format!("kani-{version}");
+        let released = dir.path().join("released");
+        let bin = released.join(&root).join("bin");
+        std::fs::create_dir_all(&bin).expect("made");
+        std::fs::write(
+            bin.join("kani-driver"),
+            "#!/bin/sh\necho \"$RUSTUP_TOOLCHAIN $*\"\n",
+        )
+        .expect("written");
+        executable(&bin.join("kani-driver"));
+        for program in ["kani-compiler", "cbmc"] {
+            std::fs::write(bin.join(program), b"#!/bin/sh\n").expect("written");
+        }
+        std::fs::write(
+            released.join(&root).join("rust-toolchain-version"),
+            b"nightly-2000-01-01-x86_64-unknown-linux-gnu",
+        )
+        .expect("written");
+        let archive = dir.path().join("kani.tar.gz");
+        let packed = Command::new("tar")
+            .arg("-czf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&released)
+            .arg(&root)
+            .status()
+            .expect("tar runs");
+        assert!(packed.success(), "the bundle is made");
+        let pin = KaniPin {
+            version: version.to_string(),
+            toolchain: "nightly-2000-01-01".to_string(),
+            url: url_of(&archive),
+            sha256: sha256_of(&archive).expect("read"),
+        };
+
+        let store = dir.path().join("store");
+        let place = store.join("entry");
+        assert_eq!(
+            install_kani(&pin, &place).expect("installed"),
+            Installed::Fetched(place.clone())
+        );
+        assert_eq!(
+            std::fs::read_link(place.join("toolchain")).expect("the link to its Rust"),
+            home()
+                .expect("a home")
+                .join(".local")
+                .join("rust")
+                .join("nightly-2000-01-01"),
+            "the link leads where scripts/install_rust.sh keeps the release"
+        );
+        let kani = place.join("bin").join("kani");
+        let cargo_kani = place.join("bin").join("cargo-kani");
+        assert_eq!(said(&kani, &["--version"]), "kani 0.0.0\n");
+        assert_eq!(
+            said(&kani, &["harness.rs"]),
+            "nightly-2000-01-01-x86_64-unknown-linux-gnu harness.rs\n",
+            "the driver runs alone, told the release the bundle was built against"
+        );
+        assert_eq!(
+            said(&cargo_kani, &["--tests"]),
+            "nightly-2000-01-01-x86_64-unknown-linux-gnu kani --tests\n",
+            "cargo-kani is the driver called as cargo calls it"
+        );
+        assert_eq!(
+            said(&cargo_kani, &["kani", "--tests"]),
+            "nightly-2000-01-01-x86_64-unknown-linux-gnu kani --tests\n",
+            "a call through cargo is passed on as it came"
+        );
+        assert_eq!(
+            install_kani(&pin, &place).expect("there"),
+            Installed::Present(place.clone())
+        );
+
+        let other = KaniPin {
+            toolchain: "nightly-2000-01-02".to_string(),
+            ..pin
+        };
+        let refused = store.join("refused");
+        match install_kani(&other, &refused).expect_err("a bundle of another Rust") {
+            FormalError::ToolUnavailable { detail, .. } => {
+                assert!(detail.contains("was built against Rust"), "{detail}")
+            }
+            other => panic!("refused as unavailable, not {other:?}"),
+        }
+        assert!(!refused.exists(), "nothing is put where the judge looks");
+    }
+
+    /// An installer shaped as TLAPS's: given `-d <dir>`, it puts `tlapm`, the
+    /// settings of an Isabelle that name the heaps under `<dir>` by the line
+    /// the release's installer writes, and a heap of TLA+, or ends 1 when
+    /// `fail`.
+    #[cfg(target_os = "linux")]
+    fn tlaps_installer(path: &Path, fail: bool) {
+        let body = if fail {
+            "#!/bin/sh\necho 'Could not compile Isabelle/TLA+' >&2\nexit 1\n"
+        } else {
+            r#"#!/bin/sh
+[ "$1" = -d ] || exit 2
+d="$2"
+mkdir -p "$d/bin" "$d/lib/tlaps/Isabelle2011-1/etc" "$d/lib/tlaps/heaps/polyml-5.4.0_x86_64-linux"
+ln -s Isabelle2011-1 "$d/lib/tlaps/Isabelle"
+printf '#!/bin/sh\necho "tlapm $*"\n' >"$d/bin/tlapm"
+chmod 0755 "$d/bin/tlapm"
+printf 'ISABELLE_HOME_USER=%s/lib/tlaps\nISABELLE_OUTPUT="$ISABELLE_HOME_USER/heaps"\n' "$d" >"$d/lib/tlaps/Isabelle2011-1/etc/settings"
+: >"$d/lib/tlaps/heaps/polyml-5.4.0_x86_64-linux/TLA+"
+"#
+        };
+        std::fs::write(path, body).expect("written");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn tlaps_is_installed_by_its_installer_and_finds_its_heaps_where_it_is_moved() {
+        let dir = super::super::WorkDir::new("test-tlaps").expect("a working directory");
+        let installer = dir.path().join("tlaps-inst.bin");
+        tlaps_installer(&installer, false);
+        let pin = TlapsPin {
+            version: "0.0.0".to_string(),
+            url: url_of(&installer),
+            sha256: sha256_of(&installer).expect("read"),
+        };
+
+        let store = dir.path().join("store");
+        let place = store.join("entry");
+        std::fs::create_dir_all(&place).expect("the store's empty entry");
+        assert_eq!(
+            install_tlaps(&pin, &place).expect("installed"),
+            Installed::Fetched(place.clone())
+        );
+        let settings = std::fs::read_to_string(
+            place
+                .join("lib")
+                .join("tlaps")
+                .join("Isabelle")
+                .join("etc")
+                .join("settings"),
+        )
+        .expect("the settings of its Isabelle");
+        assert_eq!(
+            settings,
+            "ISABELLE_HOME_USER=\"$ISABELLE_HOME/..\"\nISABELLE_OUTPUT=\"$ISABELLE_HOME_USER/heaps\"\n",
+            "the heaps are named relative to Isabelle's own directory, not the scratch \
+             the installer was run in"
+        );
+        let tlaps = place.join("bin").join("tlaps");
+        assert_eq!(said(&tlaps, &["--version"]), "tlaps 0.0.0\n");
+        assert_eq!(
+            said(&tlaps, &["--toolbox", "0", "0", "M.tla"]),
+            "tlapm --toolbox 0 0 M.tla\n"
+        );
+        let beside: Vec<_> = std::fs::read_dir(&store)
+            .expect("the store")
+            .map(|entry| entry.expect("an entry").file_name())
+            .collect();
+        assert_eq!(
+            beside,
+            [std::ffi::OsString::from("entry")],
+            "no scratch is left"
+        );
+        assert_eq!(
+            install_tlaps(&pin, &place).expect("there"),
+            Installed::Present(place.clone())
+        );
+
+        let failing = dir.path().join("failing-inst.bin");
+        tlaps_installer(&failing, true);
+        let failing_pin = TlapsPin {
+            version: "0.0.0".to_string(),
+            url: url_of(&failing),
+            sha256: sha256_of(&failing).expect("read"),
+        };
+        let refused = store.join("refused");
+        match install_tlaps(&failing_pin, &refused).expect_err("an installer that failed") {
+            FormalError::ToolUnavailable { detail, .. } => {
+                assert!(
+                    detail.contains("Could not compile Isabelle/TLA+"),
+                    "{detail}"
+                )
+            }
+            other => panic!("refused as unavailable, not {other:?}"),
+        }
+        assert!(!refused.exists(), "nothing is put where the judge looks");
     }
 }

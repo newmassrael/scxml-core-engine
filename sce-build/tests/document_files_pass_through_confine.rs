@@ -268,6 +268,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("admitted_apalache", 1),
             ("admitted_java", 1),
             ("admitted_storm", 1),
+            ("admitted_tlaps", 1),
+            ("admitted_kani", 3),
+            ("admitted_cbmc", 1),
             ("admitted_apalache_modules", 1),
             // Whether the tool is there already; the installer it runs otherwise is a
             // script of its own, which this scan does not read.
@@ -276,6 +279,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("install_java", 1),
             ("install_apalache", 1),
             ("install_storm", 1),
+            ("install_tlaps", 1),
+            ("install_kani", 1),
+            ("install_cbmc", 1),
         ],
     ),
     (

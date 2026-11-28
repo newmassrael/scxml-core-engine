@@ -3,5 +3,8 @@
   "verus": {"version": "0.2026.11.02.8bf68ee", "toolchain": "1.99.1", "url": "https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip", "sha256": "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c"},
   "apalache": {"version": "0.63.0", "url": "https://github.com/apalache-mc/apalache/releases/download/v0.63.0/apalache-0.63.0.tgz", "sha256": "a756e96af249bf33cd7629667a49472cb26ac8227c48583da139b414834d59df"},
   "java": {"version": "21.0.13.1+2", "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_x64_linux_hotspot_21.0.13.1_2.tar.gz", "sha256": "18f44fab9065217f3ba61d0eef8a7b5f3c3713aa7293001b0d4ac10ede3850f0"},
-  "storm": {"version": "2.0.0", "url": "https://github.com/stormchecker/storm/releases/download/2.0.0/storm-2.0.0-debian12-amd64.deb", "sha256": "54d5c0b15c1ae7687897b43d118f62a3b6d7a2d1c30eec69dc760c0c37bf655a"}
+  "storm": {"version": "2.0.0", "url": "https://github.com/stormchecker/storm/releases/download/2.0.0/storm-2.0.0-debian12-amd64.deb", "sha256": "54d5c0b15c1ae7687897b43d118f62a3b6d7a2d1c30eec69dc760c0c37bf655a"},
+  "tlaps": {"version": "1.5.0", "url": "https://github.com/tlaplus/tlapm/releases/download/202210041448/tlaps-1.5.0-x86_64-linux-gnu-inst.bin", "sha256": "ebb7a3f271bdb564f74cb0a2767ef7b9ff7045621a9be7c50d363a03c2e6f08a"},
+  "kani": {"version": "0.68.0", "toolchain": "nightly-2026-08-21", "url": "https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz", "sha256": "32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3"},
+  "cbmc": {"version": "6.11.0", "url": "https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb", "sha256": "b3721aa541038384d7801ea3aeabbcddc3e8845ac8f1cbff637cf8dec7481ac8"}
 }

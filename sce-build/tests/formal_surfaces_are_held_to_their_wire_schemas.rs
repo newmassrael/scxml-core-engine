@@ -286,6 +286,30 @@ fn the_toolchain_schema_rejects_what_the_judge_refuses() {
             .expect("an object")
             .remove("sha256");
     });
+    refused("no TLAPS", &|v| {
+        v.as_object_mut().expect("an object").remove("tlaps");
+    });
+    refused("TLAPS given a Rust release", &|v| {
+        v["tlaps"]["toolchain"] = serde_json::json!("1.99.1")
+    });
+    refused("no Kani", &|v| {
+        v.as_object_mut().expect("an object").remove("kani");
+    });
+    refused("Kani without its Rust release", &|v| {
+        v["kani"]
+            .as_object_mut()
+            .expect("an object")
+            .remove("toolchain");
+    });
+    refused("Kani on a Rust channel that moves", &|v| {
+        v["kani"]["toolchain"] = serde_json::json!("nightly")
+    });
+    refused("no CBMC", &|v| {
+        v.as_object_mut().expect("an object").remove("cbmc");
+    });
+    refused("CBMC given a Rust release", &|v| {
+        v["cbmc"]["toolchain"] = serde_json::json!("1.99.1")
+    });
 }
 
 const QUANTITIES_SCHEMA: &str = "schemas/sce-formal-quantities.v1.schema.json";

@@ -16673,7 +16673,10 @@ enum FormalCommand {
     /// Fetch each pinned tool, admit it by its digest and put it where the
     /// judges look, unless the one pinned is there. TLC and Apalache are
     /// installed with the Java runtime they run on; Storm's package is
-    /// unpacked, and the system libraries it asks for are the image's.
+    /// unpacked, and the system libraries it asks for are the image's. TLAPS
+    /// is installed by its own installer, which builds Isabelle's heaps; Kani
+    /// runs on a Rust release `scripts/install_rust.sh` installs, and CBMC's
+    /// package is unpacked as Storm's is.
     Install {
         /// Which tool.
         #[arg(long, value_enum, default_value = "all")]
@@ -16692,6 +16695,15 @@ enum FormalTool {
     Java,
     /// The probabilistic model checker of the level of quantity (docs/adr/0119).
     Storm,
+    /// The TLA+ proof system, for the theorems of arithmetic whose size is
+    /// essential (docs/adr/0146, D3).
+    Tlaps,
+    /// The model checker of Rust, for harnesses generated from the contracts of
+    /// a seam (docs/adr/0146, D3).
+    Kani,
+    /// The model checker of C, for harnesses generated from the contracts of a
+    /// C11 seam (docs/adr/0146, D3).
+    Cbmc,
 }
 
 /// Run one judge of `sce-codegen formal`. See `Commands::Formal`.
@@ -16918,6 +16930,27 @@ fn cmd_formal(judge: FormalCommand) {
                 let place = toolchain::storm_place(&pins.storm).unwrap_or_else(|err| leave(err));
                 match toolchain::install_storm(&pins.storm, &place) {
                     Ok(installed) => said(&format!("Storm {}", pins.storm.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
+            if matches!(tool, FormalTool::All | FormalTool::Tlaps) {
+                let place = toolchain::tlaps_place(&pins.tlaps).unwrap_or_else(|err| leave(err));
+                match toolchain::install_tlaps(&pins.tlaps, &place) {
+                    Ok(installed) => said(&format!("TLAPS {}", pins.tlaps.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
+            if matches!(tool, FormalTool::All | FormalTool::Kani) {
+                let place = toolchain::kani_place(&pins.kani).unwrap_or_else(|err| leave(err));
+                match toolchain::install_kani(&pins.kani, &place) {
+                    Ok(installed) => said(&format!("Kani {}", pins.kani.version), installed),
+                    Err(err) => leave(err),
+                }
+            }
+            if matches!(tool, FormalTool::All | FormalTool::Cbmc) {
+                let place = toolchain::cbmc_place(&pins.cbmc).unwrap_or_else(|err| leave(err));
+                match toolchain::install_cbmc(&pins.cbmc, &place) {
+                    Ok(installed) => said(&format!("CBMC {}", pins.cbmc.version), installed),
                     Err(err) => leave(err),
                 }
             }
