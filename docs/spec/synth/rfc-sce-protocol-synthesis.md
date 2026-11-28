@@ -3487,6 +3487,12 @@ that the queue itself imposes no bound. `intrusive` is that mode: the queue link
 defines, each holding an element as its value and the list's link beside it, the caller owns every node, and
 push cannot fail. The element is a value and carries no link, so `<sce:intrusive/>` takes no attribute (ADR 0088).
 
+*Amended by: ADR 0086 (section 16).* No queue is unbounded. Every queue states its `capacity`; `<sce:segmented>` is
+withdrawn, and whether a queue's slots are fixed or grown as it fills is the deployment's
+(`machines.<m>.queues.<queue>.storage`), a grown queue served by the sequential and locked rings until a linked
+ring or LSCQ held to its capacity is promoted; `<sce:intrusive capacity>` states the most elements its caller's
+nodes may hold. The storage modes table and the selection table above read so once that section lands.
+
 **Algorithm selection.** The generator takes the first row that
 matches the storage mode and cardinality and whose guarantee is at
 least the declared progress.

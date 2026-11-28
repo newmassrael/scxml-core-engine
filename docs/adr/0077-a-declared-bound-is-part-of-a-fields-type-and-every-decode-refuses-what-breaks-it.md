@@ -6,6 +6,9 @@
   have landed on every backend that stores, a heap node's policy limit with them (2026-11-03); step 5 is the
   consumer's.
 - Date: 2026-11-01
+- Amended by: ADR 0086 section 16 (2026-11-28, accepted 2026-11-29), section 7: a field with neither a bound nor a
+  capacity has no storing form on any lane, and `GrowBytes`, `GrowStr` and `GrowVec` retire; a heap node that keeps
+  such a field states a capacity for it (section 16.4).
 - Amends:
   - ADR 0065 §6 R1: the bound of a bounded byte string or text includes its `sce:max-size`, not only the range of its
     length field;

@@ -14,8 +14,10 @@
   the slot section 8.1 did not list, and no buffer of an event's size on a stack (section 8.5, answer I). Amended
   again on 2026-11-28, under the owner's standing rule, at a downstream consumer's request: no collection is
   unbounded, and the deployment, never the document, chooses where each keeps its elements (section 16, landing step
-  10).
-- Date: 2026-11-03; amended 2026-11-04, 2026-11-06, 2026-11-08 and 2026-11-28
+  10). Section 16 accepted on 2026-11-29 under the owner's standing rule, with every amendment of the independent
+  review (section 16.10, "Amended on acceptance"); its withdrawal of the unbounded `segmented` queue and its bound of
+  the engine's inbox accepted under the owner's delegation of 2026-11-29.
+- Date: 2026-11-03; amended 2026-11-04, 2026-11-06, 2026-11-08 and 2026-11-28; section 16 accepted 2026-11-29
 - Amended by: ADR 0108 D1 and D7 (2026-11-19): section 1's grammar gains `map<K, T>[B]` and `set<K>[B]`, whose
   key is a fixed-width integer, `bool`, an enum, a bounded text or byte string, or a record whose every field is
   a key (`validation/map-key-type`), whose bracket states no lower count, and which no event schema's field holds
@@ -1422,7 +1424,7 @@ the spelling's own tests.
     bound, on the shared table `tests/json_text/payload_refusal.json`, which gains `min` in its type descriptor;
     each writer's check refuses one short; the parser refuses each misplaced count; the goldens of the two codes.
 
-### 16. No collection is unbounded, and the deployment chooses where each keeps its elements (amended 2026-11-28)
+### 16. No collection is unbounded, and the deployment chooses where each keeps its elements (amended 2026-11-28, accepted 2026-11-29)
 
 A downstream consumer moving a protocol stack's logic into SCE documents asked that this be one rule, stated once:
 there is no unbounded collection. Every list, map, set, queue, log and buffer has a bound in its type; where it keeps
@@ -1431,33 +1433,52 @@ application processor, where the bound is a quota; reaching the bound is refused
 processor calls unbounded is a declared large bound; one document serves both; and the model of a document is finite
 on every deployment. Section 1 says the first of these for every value type, and the record of each kind says it for
 its own. Read kind by kind (16.2), the rule held for most and not for all. This section states the rule (16.1),
-confirms it where it held, and closes it where it did not (16.3, 16.4).
+confirms it where it held, and closes it where it did not (16.3 to 16.7).
+
+Accepted on 2026-11-29 under the owner's standing rule, with every amendment of the independent review ("Amended on
+acceptance", 16.10). Two of its decisions overturn what the owner admitted before, and the main session accepted them
+under the owner's delegation of 2026-11-29: the withdrawal of the unbounded `segmented` queue (16.5), which the
+admission of 2026-09-30 named "bounded, unbounded and no-alloc" (`SCE_FORGE.md` §10, "Application: 2026-09-30
+`queue`"), so that its word "unbounded" now reads "grown to a declared bound"; and the bound of the engine's inbox on
+the lanes that held it unbounded (16.7).
 
 #### 16.1 The rule
 
 1. **A bound is part of the type of every collection.** A value type states it in its bracket (section 1.2; ADR 0108
    D1 for a map and a set). A kind states it in its document, as a constant or by a key of the deployment: a queue's
    `capacity` (RFC §synth-5-P), a log's `<sce:retention>` (ADR 0062). A reference to bytes held elsewhere states the
-   most bytes it names (ADR 0153 D7). A collection with no bound is no type of the language (section 1.4) and no
-   document of a kind. A bound may be named (`[name=N]`, ADR 0050), so a deployment moves it with `--limit` and the
-   document stays one text.
-2. **The deployment chooses the storage, and the document never does.** There are three storages. **Fixed**: the
-   bound reserved in the value or in the machine that holds it. **Lent**: a run of memory a host lends for the
-   collection's life, its length a run-time value under the bound and refused past it (ADR 0154 D1, ADR 0157 D3,
-   ADR 0111 D4). **Grown**: allocated as the collection fills, and never past the bound. A machine of
-   `platform.class: mcu` holds every collection fixed or lent; a machine of `platform.class: ap` may hold any of them
-   grown. C11 has fixed and lent storage alone (ADR 0110), and the lanes of a host with a heap (C++, Kotlin, Go,
-   Python, Swift and the Interpreter) grow (ADR 0108 D4, "Storage").
+   most bytes it names (ADR 0153 D7). A storing form of a codec's field states what it holds, its bound or the
+   deployment's capacity (ADR 0077 section 7; 16.4). A collection with no bound is no type of the language (section
+   1.4) and no document of a kind. A bound may be named (`[name=N]`, ADR 0050), so a deployment moves it with
+   `--limit` and the document stays one text.
+2. **The deployment chooses the storage, and the document never does.** There are three storages, named so in every
+   place this section speaks of one. **Fixed**: the bound reserved in the value or in the machine that holds it (Rust's
+   marker `Inline`). **Lent**: a run of memory a host lends for the collection's life, its length a run-time value
+   under the bound and refused past it (ADR 0154 D1, ADR 0157 D3, ADR 0111 D4; Rust's `Lent` and `LentIndexed`).
+   **Grown**: allocated as the collection fills, and never past the bound (Rust's marker `Heap`). A machine of
+   `platform.class: mcu` holds every collection fixed or lent, and holds it so because the lanes the build generates for
+   that class are Rust and C11 alone (`KindClass::McuClass`, `sce-build/src/forge/codegen_matrix.rs`). A machine of
+   `platform.class: ap` may hold any of them grown. A deployment may name the storage of one variable of a machine,
+   `machines.<m>.variables.<variable>.storage`, `fixed` or `grown`, over its class's (16.3, item 2); `grown` is refused
+   on an `mcu` machine. C11 has fixed and lent storage alone (ADR 0110), so a C11 machine deployed on an application
+   processor reserves the declared bound of each collection whole, as it does on a microcontroller: the residue of a
+   lane with no heap, which a list, a text or a byte string lent to it would narrow (16.3, item 4). The lanes of a
+   host with a heap grow (ADR 0108 D4, "Storage"): Kotlin, Go, Python, Swift and the Interpreter, and C++, whose
+   bounded types grow over `std::vector` and `std::string` (`SCE::Forge::Bounded<std::vector<T>, N>`,
+   `backends/cpp/forge-runtime/include/sce/forge/bounded.h`).
 3. **The bound is a quota, the same on every storage.** At its bound a collection answers what its type says it
    answers there, on every storage, and never holds more. A map's put answers `full` (ADR 0108 D4). A statechart's
    append raises `error.execution`, or writes `full`, `dropped` or `evicted` into the outcome it names (ADR 0157
-   D4). A queue hands the value back as `Full`, `Dropped` or `Evicted` and counts its losses in `lost` (ADR 0157
-   D1). A log forgets its oldest entry and tells each reader that fell behind how many it missed (ADR 0062). A store
-   of a text or a byte string past its bound is refused whole as `error.execution`, and the block ends (section 5, ADR
-   0133). An upload past a blob's bound is refused at the byte that passes it (ADR 0153 D2). Each answer is a value or
-   an event the document reads, so the document counts it in a variable of its own, which the snapshot and the saved
-   state carry. A storage decides where the elements live and never how many there may be, so one saved state means
-   one thing on every storage (section 7.4; ADR 0108, Alternatives rejected, 1).
+   D4). An algorithm's append fails the algorithm with its capacity failure (16.4). A queue hands the value back as
+   `Full`, `Dropped` or `Evicted` and counts its losses in `lost` (ADR 0157 D1). A log forgets its oldest entry and
+   tells each reader that fell behind how many it missed (ADR 0062). A store of a text or a byte string past its bound
+   is refused whole as `error.execution`, and the block ends (section 5, ADR 0133). A storing decode past its capacity
+   answers `CapacityExceeded` (ADR 0077 section 7). An inbox past its capacity refuses the post as `full` (ADR 0147
+   D1; 16.7). An upload past a blob's bound is refused at the byte that passes it (ADR 0153 D2). Each answer is a value
+   or an event its reader reads, so it is counted, by the document in a variable of its own, which the snapshot and the
+   saved state carry, or by the host where the host is the reader. A storage decides where the elements live and never
+   how many there may be, so one saved state means one thing on every storage (section 7.4; ADR 0108, Alternatives
+   rejected, 1).
 4. **What an application processor calls unbounded is a declared large bound.** Its tables are bounded by a number its
    deployment chooses (ADR 0108 D4's `[ap_max_faces=4096]`), and a limit read at start is a value of the machine at
    most that bound (ADR 0108 D4, ADR 0111 D4, ADR 0157 D4's `limit`). In grown storage a large bound costs what is
@@ -1468,143 +1489,298 @@ confirms it where it held, and closes it where it did not (16.3, 16.4).
 6. **The model is finite on every deployment.** A document's model holds values and never storage (ADR 0115 D7), the
    numbers of a build are constants of its module, and a value of a type with a bound is one of finitely many. So the
    model of one document is finite under every deployment's numbers, and the storage a deployment chose changes
-   nothing in it. Memory that a grown collection has not yet been given is the host's promise and lies below the
-   model: a deployment that grows promises the memory of its declared bounds, and an allocator that fails short of a
-   bound is a failure of the host, named with every verdict as an assumption (ADR 0156 D1, item 4).
+   nothing in it. An exploration may run a named bound at a number smaller than any deployment's, since each named
+   bound is a constant of the module (ADR 0115 D7), and its verdict states the numbers it ran at; it holds for every
+   number only where ADR 0156 D5's conditions or a proof (ADR 0156 D9) say so.
+7. **A deployment may state its memory, and is then held to it.** Memory that a grown collection has not yet been
+   given lies below the model. `platform.memory_budget`, optional, is the most bytes a machine's collections may hold:
+   where a deployment states it, the build sums, per instance of each machine, every collection's bound times the size
+   of its slot, the inbox's included, and refuses a deployment whose sum passes it
+   (`deploy/memory-budget-exceeded`, naming the machine, the sum, the budget and the largest terms). Where a
+   deployment states none, a deployment that grows promises the memory of its declared bounds, and an allocator that
+   fails short of a bound is a failure of the host, named with every verdict as an assumption (ADR 0156 D1, item 4).
+8. **A collection may bound the sum of its elements' bytes.** A list or a map whose elements hold texts or byte
+   strings may state, beside its count, the most bytes those texts and byte strings hold together, at any depth:
+   `list<record:Reply>[64, total=reply_bytes=16384]`, `map<K, V>[B, total=name=N]`. The total is a bound of the
+   type, a named one like any other, because it decides which values exist and so what a saved state means; it is
+   not a property of the storage, which never changes what a collection holds (item 3). Reaching it is the
+   collection's full, answered as its count's full is: a put's `full`, an append's `error.execution` or outcome
+   `full`. Its fixed storage is then a pool, one run of the total's bytes that the elements' texts and byte strings are
+   drawn from, beside the slots of the count, so a microcontroller reserves the total and not the count times the
+   largest element (an arena with a quota: Hanson, "Fast allocation and deallocation of memory based on object
+   lifetimes", Software: Practice and Experience 20(1), 1990). A total no smaller than the count times the largest
+   element's bytes states nothing and is refused (`validation/attribute-rule-violated`).
 
 #### 16.2 Each kind, read against the rule
 
 | Collection | Its bound | Its storage | At its bound | Held |
 |---|---|---|---|---|
-| `list<T>[M..B]`: a variable, a field, a payload, an algorithm's slot | section 1 | C11 fixed (section 7.1), or the caller's (ADR 0082); a heap lane grows; Rust chosen by the build's `alloc` feature (section 7.4) | `error.execution`, or ADR 0157 D4's outcome | not on Rust (16.3) |
+| `list<T>[M..B]`: a variable, a field, a payload | section 1 | C11 fixed (section 7.1); a heap lane grows; Rust chosen by the build's `alloc` feature (section 7.4) | `error.execution`, or ADR 0157 D4's outcome | not on Rust (16.3) |
+| an algorithm's list local, return and destination (`SCE_FORGE.md` §4.12) | the type's | C11 fixed, or the caller's (ADR 0082); Rust `SceOwnedList`, `HeapList` under `alloc`, whose `N` is advisory; C++ `push_back`, Go `append` and the Python, Kotlin and Swift appends | the bounded lanes fail; the others grow past it (`ListSpelling::push`, `sce-build/src/forge/generator.rs`: "fallible on the bounded backends and grows the others") | no (16.4) |
 | `string[B]`, `bytes[B]` | section 1.4 | as a list | refused whole, `error.execution` (section 5) | not on Rust (16.3) |
+| a codec's owned list, text or byte string with no bound and no capacity (ADR 0077 section 7) | none | Rust's `GrowBytes`, `GrowStr` and `GrowVec` (`backends/rust/forge-runtime/src/storage.rs`), "for a field of any bound"; C11 refuses it | none | no (16.4) |
 | `map<K, V>[B]`, `set<K>[B]` | ADR 0108 D1 | C11 fixed; a heap lane grows; Rust's parameter: `Inline`, `Heap`, `Linear` (ADR 0108 D4), `Lent`, `LentIndexed` (ADR 0154) | `full` (ADR 0108 D4) | the type yes; a generated Rust machine's own map takes `DefaultMapStorage`, which the build's `alloc` feature chooses (16.3) |
-| `queue` with `<sce:bounded>` | `capacity`, a constant or a key of the deployment (RFC §synth-5-P); `c` under it at run time (ADR 0111 D4) | its own `capacity` slots, or `slots_for(c)` its caller lends (ADR 0157 D3) | `Full`, `Dropped`, `Evicted` and `lost` (ADR 0157 D1) | yes, but none grows (16.4) |
-| `queue` with `<sce:segmented>` | none: "the injected allocator" bounds it (RFC §synth-5-P) | grown, chosen by the document; refused on an `mcu` machine (`queue/segmented-needs-alloc`) | nothing short of the allocator | no (16.4) |
-| `queue` with `<sce:intrusive>` | none in its type: the length of the array of nodes its caller holds (ADR 0088) | the caller's nodes | a push cannot fail | no (16.4) |
-| `broadcast-log` | `<sce:retention>`, a constant or a key of the deployment (ADR 0062) | fixed on every lane, `retention + 1` slots | forgets its oldest; `Lagged` to a reader that fell behind (ADR 0062) | yes (16.4, item 6) |
+| `queue` with `<sce:bounded>` | `capacity`, a constant or a key of the deployment (RFC §synth-5-P); `c` under it at run time (ADR 0111 D4) | its own `capacity` slots, or `slots_for(c)` its caller lends (ADR 0157 D3) | `Full`, `Dropped`, `Evicted` and `lost` (ADR 0157 D1) | yes, but none grows (16.5) |
+| `queue` with `<sce:segmented>` | none: "the injected allocator" bounds it (RFC §synth-5-P) | grown, chosen by the document; refused on an `mcu` machine (`queue/segmented-needs-alloc`) | nothing short of the allocator | no (16.5) |
+| `queue` with `<sce:intrusive>` | none the document states: the length of the array of nodes its caller holds, under the `u32` index (ADR 0088) | the caller's nodes | a push cannot fail | no (16.5) |
+| `broadcast-log` | `<sce:retention>`, a constant or a key of the deployment (ADR 0062) | fixed on every lane, `retention + 1` slots | forgets its oldest; `Lagged` to a reader that fell behind (ADR 0062) | yes (16.6) |
+| the engine's inbox (ADR 0084) | C11's and Rust's bare-metal: the deployment's; C++, Go, Python and Rust with `std`: none (`sce/include/core/EngineInbox.h`, an LSCQ) | fixed where bounded; grown where not | `full` where bounded (ADR 0147 D1) | not on the hosted lanes (16.7) |
 | a blob's reference, `record:BlobRef` | `sce:max-size` with `sce:limit` (ADR 0153 D7) | the host's store | refused at the byte that passes it (ADR 0153 D2) | yes |
 | a view's result and each nest | a declared bound (ADR 0151 D2, D8) | derived and not saved (ADR 0151 D4) | cut in its order, with `total` (ADR 0151 D2) | yes |
 
-#### 16.3 Lists, texts, byte strings and a machine's maps on Rust: the storage is a parameter, and the deployment chooses it
+#### 16.3 Lists, texts, byte strings and maps on Rust: every type names its storage, and the deployment chooses it
 
 **What did not hold.** Section 7.4 holds a list, a text and a byte string in `BoundedList<T, N>`, `SceString<N>` and
 `SceBytes<N>`, whose storage the leaf crate's `alloc` feature chooses (`BoundedListStorage` and `SceStringStorage`
 in `backends/rust/portable-bytes/src/lib.rs`). ADR 0108 D4 (amended 2026-11-21) found that place wrong for a map:
 Cargo turns a feature on for every crate of a build once one crate asks for it, so as soon as one crate of a build has
-an allocator, every list of the build grows on the heap, and a machine of fixed memory cannot keep its lists inline
-beside a machine with a heap in one build. The same amendment left a generated machine's own map variables in
-`DefaultMapStorage`, which that feature chooses too. Neither is the deployment's choice.
+an allocator, every list of the build grows on the heap, and a machine of fixed memory cannot keep its lists in fixed
+storage beside a machine with a heap in one build. The same amendment left a type that names no storage, a generated
+machine's own map variables among them, in `DefaultMapStorage`, which that feature chooses too. Beside them stand two
+more families a feature chooses between, `InlineList`, `HeapList` and `SceOwnedList`, and `InlineStr` and `HeapStr`.
+None of it is the deployment's choice.
 
 **Decision.**
 
-1. **Every Rust type that holds a collection takes its storage as a type parameter**, as `BoundedMap<K, V, N, S>`
-   does: `BoundedList<T, N, S>`, `SceString<N, S>` and `SceBytes<N, S>`, and a schema unit's record that holds
-   any of them (`<Schema>Payload<S>`). The markers are the map's, `Inline` (the bound in the value, `heapless`) and
-   `Heap` (grown, where the crate has an allocator), so one family of markers serves every collection and a
-   deployment's choice is one marker. The parameter's default is the storage the build's feature chooses today, so no
-   name a host writes changes meaning. Two values of one type are equal when their elements are, whatever their
-   storages, and a widening converts between bounds whatever the storages, as a map's equality does (ADR 0108 D4).
+1. **One family per collection, its storage a type parameter with no default.** `BoundedList<T, N, S>`,
+   `SceString<N, S>` and `SceBytes<N, S>`, and a schema unit's record that holds any of them (`<Schema>Payload<S>`),
+   take the storage as `BoundedMap<K, V, N, S>` does, over the map's markers: `Inline` for fixed storage and `Heap`
+   for grown storage, so one family of markers serves every collection and a deployment's choice is one marker.
+   `InlineList`, `HeapList` and `SceOwnedList` fold into `BoundedList`, and `InlineStr` and `HeapStr` into
+   `SceString`. No type has a default storage: `DefaultMapStorage`, `SceOwnedList`'s choice and the feature-chosen
+   storages of `BoundedList` and `SceString` retire, and a type names its storage wherever it is written.
 2. **The generator names the storage of every collection a Rust machine holds** (a variable, a record's field, a
    payload's place, at any depth, and each map, a `Linear` one included) from the deployment of the machine it
-   generates: `Inline` for a machine of `platform.class: mcu`, `Heap` for one of `ap`. With no deployment it names
-   none and the default stands, so a machine generated without one is the text it is today. A value's storage changes
-   nothing any of its operations answers (16.1, item 3), which is why it may follow the class.
-3. **A run lent to a list, a text or a byte string is not added here.** No host lends one yet, and it is the
-   parameter's next storage when one does, as ADR 0154 D2 adds a slot's generation where its use is. An algorithm's
+   generates: `Inline` for a machine of `platform.class: mcu` and `Heap` for one of `ap`, or what
+   `machines.<m>.variables.<variable>.storage` names for that variable and everything it holds. A machine generated
+   with no deployment names `Inline`, which every target holds. A value's storage changes nothing any of its operations
+   answers (16.1, item 3), which is why it may follow the class.
+3. **Equality, widening and a conversion at one bound.** Two values of one type are equal when their elements are,
+   whatever their storages, as a map's equality is (ADR 0108 D4). A widening converts to a larger bound whatever the
+   storages (section 7.4). Beside it, a value converts to the same bound in another storage, and the conversion cannot
+   fail, since both hold at most `N` (`From`, with no check). One schema unit used in one build by a machine of each
+   class is `<Schema>Payload<Inline>` in one and `<Schema>Payload<Heap>` in the other; the generated adapter of the
+   receiving machine applies the conversion where a value crosses between them, at the door a post enters (ADR 0084)
+   and at a link's event (ADR 0111 D2), so no host converts by hand.
+4. **A run lent to a list, a text or a byte string is not added here.** No host lends one yet, and it is the
+   parameter's next storage when one does, on Rust and on C11, whose residue on an application processor it would
+   narrow (16.1, item 2), as ADR 0154 D2 adds a slot's generation where its use is. An algorithm's
    list in storage its caller holds is ADR 0082's already.
 
-#### 16.4 Queues: each states its bound, and the deployment says whether its slots are fixed or grown
+#### 16.4 An algorithm's lists and a codec's owned fields are held to their bounds on every lane
+
+**What did not hold.** An algorithm's list local, return and destination declare a bound (`SCE_FORGE.md` §4.12), and
+the bounded lanes refuse past it; the others grow past it. Rust's `SceOwnedList` is `HeapList` under `alloc`, whose
+`N` is advisory and whose push never fails; C++ `push_back`, Go `append` and the Python, Kotlin and Swift appends
+check nothing. And a codec's field that states no bound and is given no capacity has an owned form in Rust's growable
+profiles, `GrowBytes`, `GrowStr` and `GrowVec`, "for a field of any bound" (ADR 0077 section 7).
+
+**Decision.**
+
+1. **Every lane's algorithm append checks the bound.** An append to an algorithm's list checks `len < N` first and, past
+   it, answers the algorithm's capacity failure, the failure the bounded lanes answer now; `ListSpelling::push` prints
+   that check on every lane. `HeapList`'s push refuses past `N` (and it folds into `BoundedList`, 16.3), so no Rust
+   list holds more than its bound on any storage.
+2. **A codec's owned field holds what it states.** A storing form of a field takes its capacity from the deployment
+   and, with none, the field's bound (ADR 0077 section 7, unchanged). A field with neither has no storing form on any
+   lane: it is read as a view of the receive buffer, which holds it whole, and a storing form of it is refused at
+   generation, naming the field, as C11 refuses it today. `GrowBytes`, `GrowStr` and `GrowVec` retire, and ADR 0077
+   section 7's "its owned form takes growable profiles only" is amended to this. A heap node that keeps such a field
+   states a capacity for it, a declared large bound (16.1, item 4).
+
+#### 16.5 Queues: each states its bound, and the deployment says whether its slots are fixed or grown
 
 **What did not hold.** `<sce:segmented>` states no bound and is the document's choice, refused on an `mcu` machine,
 so a document that holds one serves no microcontroller. `<sce:intrusive>` holds at most as many nodes as the array
-its caller lends, a length no type states. And no queue whose bound is stated grows as it is used.
+its caller lends, a length no document states, under the `u32` index alone. And no queue whose bound is stated grows
+as it is used.
+
+**Why withdrawal is the textbook answer.** A bound, a full policy and a progress guarantee belong to the abstract data
+type; whether its slots are one array or a list of segments is its representation, hidden behind it (Liskov and
+Zilles, "Programming with abstract data types", SIGPLAN Notices 9(4), 1974; Parnas, "On the criteria to be used in
+decomposing systems into modules", CACM 15(12), 1972). ADR 0108 split a map the same way. So the document states the
+type and the deployment chooses the representation; segmentation survives as grown storage.
 
 **Decision.**
 
 1. **One statement of the bound.** `<sce:bounded capacity="N"/>`, or `source="deploy"` with its key, is the bound of
    every queue that keeps its elements in slots, and a queue's run-time capacity `c` stays under it (ADR 0111 D4).
-2. **The slots are the deployment's.** `queues.<queue>.storage` in the deployment, beside a log's
-   `queues.<log>.min_wrap_ops`, is `fixed` or `grown`. `fixed`, the default and today's queue, holds its own
-   `capacity` slots or is made over `slots_for(c)` slots its caller lends, which its host chooses where it makes the
-   queue (ADR 0157 D3). `grown` allocates its slots in segments of `queues.<queue>.segment` as the queue fills and
-   frees them as it drains, never holding more than `c` elements, with `queues.<queue>.allocator_progress`, the
-   progress of the allocator the host injects, which `<sce:segmented allocator-progress>` stated until now. `grown`
-   on a machine of `platform.class: mcu` is refused by the code that refuses `<sce:segmented>` there today
-   (`queue/segmented-needs-alloc`). The default is `fixed`, and not the class's: a queue's storage decides which row
-   of ADR 0157 D2's selection serves it, and so what progress it can give, so the deployment names it rather than
-   inheriting it.
-3. **The rows of grown storage.** The sequential ring and the locked ring are ADR 0157 D1's table itself, with no step
+2. **The slots are the deployment's.** `machines.<m>.queues.<queue>.storage` in the deployment, beside the same
+   table's `min_wrap_ops` (`sce-build/src/mesh/deploy.rs`), is `fixed` or `grown`. `fixed`, the default and today's
+   queue, holds its own `capacity` slots or is made over `slots_for(c)` slots its caller lends, which its host chooses
+   where it makes the queue (ADR 0157 D3). `grown` allocates its slots in segments of
+   `machines.<m>.queues.<queue>.segment` as the queue fills and frees them as it drains, never holding more than `c`
+   elements, with `machines.<m>.queues.<queue>.allocator_progress`, the progress of the allocator the host injects,
+   which `<sce:segmented allocator-progress>` stated until now. A grown queue's push gives the lesser of its row's
+   progress and `allocator_progress` (RFC §synth-5-P, "Segmented push"). The default is `fixed`, and not the class's:
+   a queue's storage decides which row of ADR 0157 D2's selection serves it, and so what progress it can give, so the
+   deployment names it rather than inheriting it.
+3. **What grown storage refuses.** `grown` on a machine of `platform.class: mcu` is refused at the deploy stage as
+   `queue/grown-needs-alloc`, a new code that replaces `queue/segmented-needs-alloc`, which names an element this
+   section withdraws. `grown` with a side in an interrupt handler is refused as `queue/alloc-in-isr`, as
+   `<sce:segmented>` is today.
+4. **The rows of grown storage.** The sequential ring and the locked ring are ADR 0157 D1's table itself, with no step
    of their own (ADR 0157 D5, item 2), and keep it over slots that grow, since the slots are moved only by the party
    that holds the queue, its one context or its lock. They serve `grown` now, at `exact` fullness. The linked Lamport
-   rings and LSCQ, which RFC §synth-5-P's selection gives `<sce:segmented>`, are unbounded as published; each held to
-   `c` is a published algorithm with a step changed, so each is a candidate under ADR 0157 D3 ("What a row is") and
-   serves no document until its verification (ADR 0157 D5, item 6) promotes it. Until then a `grown` queue whose
-   declared progress only they could reach is refused by `queue/progress-unreachable`, whose fix names `fixed` or
-   `blocking`.
-4. **`<sce:segmented>` is withdrawn.** Its bound was the allocator's, which is no bound, and its storage was the
+   rings and LSCQ, which RFC §synth-5-P's selection gives `<sce:segmented>`, are unbounded as published; holding
+   either to `c` needs an occupancy count its producers and consumers share, a changed algorithm, so each held to `c`
+   is a candidate under ADR 0157 D3 ("What a row is") and serves no document until its verification (ADR 0157 D5, item
+   6) promotes it. **The progress this costs:** until then a `shared` grown queue is `blocking`, and one whose
+   declared progress only those rows could reach is refused by `queue/progress-unreachable`, whose fix names `fixed`
+   storage or `blocking`. A queue that must be lock-free on an application processor keeps `fixed` storage, where the
+   Lamport ring and SCQ serve it as today.
+5. **The runtimes stay as the candidates' bodies.** The linked Lamport rings and LSCQ (`queue_segmented.h` of the C
+   and C++ forge runtimes, `queue/linked.rs` and `queue/lscq.rs` of the Rust one) stay, with their GenMC tests
+   (`lscq_segment_handover.cpp`, `engine_inbox_*.cpp`), as the bodies of the candidates of item 4 and of the
+   inbox's (16.7); no document selects them until a candidate is promoted.
+6. **`<sce:segmented>` is withdrawn.** Its bound was the allocator's, which is no bound, and its storage was the
    document's choice. A document that writes it is refused as `queue/segmented-superseded`, a new code whose message
-   names the rewrite, `<sce:bounded>` with a capacity and the deployment's `grown` with the segment and allocator
-   progress the document declared. It carries no fix: the capacity is the author's to state. The three committed
-   documents that hold one (`tests/forge/resources/queue_conformance_segmented.scxml`,
-   `queue_conformance_segmented_many.scxml`, `queue_segmented_lscq.scxml`) are rewritten so, each with the capacity
-   its contract scenarios fill. The runtimes' LSCQ stays: the C++ engine's inbox stands on it (16.5).
-5. **An intrusive queue states its bound too.** `<sce:intrusive capacity="N"/>`, or `source="deploy"` with its key,
-   is the most nodes the caller's array may hold. The list is made over an array of at most that many (Rust's
-   `Mpsc::new`, C++'s `IntrusiveMpsc`, C11's initializer), and a longer one is refused where it is made (`Err`;
-   `false`), as ADR 0154 D1 refuses a run past a map's bound. The push still cannot fail: a node is in at most one
-   queue at a time (ADR 0088, section 1), so the bound is held where the nodes are given and the queue never holds more
-   than the array. The nodes are the caller's on every deployment, which is what the mode is. ADR 0088's "takes no
-   attribute" is amended to this one.
-6. **A log keeps fixed storage on every deployment.** A `broadcast-log` forgets only when it is full and never
-   shrinks, so from its `retention`-th publish it holds its bound whatever its storage. Slots grown in its first lap
-   would differ from reserved slots only before then, and would add to ADR 0062's protocol a publication of new slots
-   to its readers, which the protocol does not have and its model does not judge. Its retention is the deployment's
-   (`source="deploy"`), which is the choice the rule asks of it.
+   names the rewrite, `<sce:bounded>` with a capacity and the deployment's storage. It carries no fix: the capacity is
+   the author's to state. The three committed documents that hold one
+   (`tests/forge/resources/queue_conformance_segmented.scxml`, one producer and one consumer,
+   `queue_conformance_segmented_many.scxml` and `queue_segmented_lscq.scxml`, many and many) declare
+   `<sce:progress>lock-free</sce:progress>` with `shared` sharing. They are rewritten as `<sce:bounded>` with the
+   capacity their contract scenarios fill and the deployment's `fixed` storage, so the Lamport ring and SCQ keep
+   serving them lock-free. Two new documents hold grown storage: one with `<sce:sharing>owner</sce:sharing>` (the
+   sequential ring) and one declaring `blocking` (the locked ring).
+7. **An intrusive queue states its bound too.** `<sce:intrusive capacity="N"/>`, or `source="deploy"` with its key,
+   is the most elements the queue may hold. Vyukov's list keeps one of its caller's nodes as its stub
+   (`Mpsc::new(nodes, len, stub)`), so the list is made over an array of at most `capacity + 1` nodes, and a longer
+   one is refused where it is made, as ADR 0154 D1 refuses a run past a map's bound. The constructor answers that
+   refusal: Rust's `unsafe fn new` returns `Result<Self, _>` where it returned `Self`, C++'s `IntrusiveMpsc` is made
+   by a factory that answers it, and C11's initializer answers `false`, which amends ADR 0088 section 1's signatures.
+   The push still cannot fail: a node is in at most one queue at a time (ADR 0088, section 1), so the bound is held
+   where the nodes are given and the queue never holds more than the array allows. The nodes are the caller's on every
+   deployment, which is what the mode is. ADR 0088's "takes no attribute" is amended to this one.
 
-#### 16.5 Outside the rule
+#### 16.6 A log keeps fixed storage on every deployment
 
-- **A codec's frame** describes the bytes of a protocol SCE does not own, and keeps no bound its peer does not state
-  (section 1.4). It is read from a buffer of bounded length, a link's slot (ADR 0111 D4) or a buffer its caller holds,
-  and what a machine keeps of it is a value of the language, held to this rule.
-- **The engine's own queues.** The internal queue and the delayed sends are sized by what the document can raise and
-  leave waiting (ADR 0076, ADR 0132), fixed on every deployment. The inbox holds what other threads post before the
-  machine reads it (ADR 0084): it is the door's, a full one refuses a post as `full` where it is bounded (ADR 0147
-  D1), and the model takes each event from outside as the environment's (ADR 0115 D7), so the inbox is no part of a
-  document's state. This section decides nothing of it.
+A `broadcast-log` forgets only when it is full and never shrinks, so from its `retention`-th publish it holds its
+bound whatever its storage. Slots grown in its first lap would differ from reserved slots only before then, and would
+add to ADR 0062's protocol a publication of new slots to its readers, which the protocol does not have and its model
+does not judge. Its retention is the deployment's (`source="deploy"`), which is the choice the rule asks of it.
 
-#### 16.6 Order of work
+#### 16.7 The engine's inbox is bounded on every lane
+
+**What did not hold.** The inbox holds what other threads post before the machine reads it (ADR 0084). C11's and
+Rust's bare-metal inbox take the deployment's capacity and refuse a post past it as `full` (ADR 0147 D1); the C++
+engine's is unbounded on the forge LSCQ (`sce/include/core/EngineInbox.h`), and Go's, Python's and Rust's with `std`
+are unbounded too (`ARCHITECTURE.md`, "Engine Threading").
+
+**Decision.** Every lane's inbox has a capacity, `machines.<m>.inbox.capacity` in the deployment: on a machine of
+`platform.class: mcu` the capacity of its fixed inbox, as today; on one of `ap` a declared large bound over grown
+storage. A post past it is refused as `full`, the outcome ADR 0147 D1's promise already has, and the poster counts
+it. ADR 0084 D2 is amended so: no input waits for a macrostep, and none is taken past the capacity. The hosted lanes'
+inbox is served by the locked ring over grown storage until an LSCQ held to the capacity is promoted under ADR 0157
+D3, so its post is `blocking` until then; the C11 and bare-metal Rust inboxes keep their rings. A deployment that
+states no capacity for an `ap` machine is refused, naming the key, since a default would be a number no one chose.
+
+#### 16.8 Outside the rule
+
+- **A codec's frame read as a view** describes the bytes of a protocol SCE does not own and keeps no bound its peer
+  does not state (section 1.4). It is read from a buffer of bounded length, a link's slot (ADR 0111 D4) or a buffer
+  its caller holds, and what a machine keeps of it is a value of the language or a storing form, held to this rule
+  (16.4).
+- **The engine's own queues** other than the inbox: the internal queue and the delayed sends are sized by what the
+  document can raise and leave waiting (ADR 0076, ADR 0132), fixed on every deployment.
+
+#### 16.9 Order of work
 
 Each step lands with a test that fails without it.
 
 1. This section.
-2. **Rust's storage parameter** (16.3): `BoundedList`, `SceString`, `SceBytes` and the schema unit's records over
-   `Inline` and `Heap`, the generator naming the storage from the class, a machine's maps likewise, and the consumer's
-   migration in `docs/SCE_CODEC_CONSUMER_MIGRATION.md`. Tests: in `backends/rust/portable-bytes`,
+2. **Rust's storage** (16.3): `BoundedList`, `SceString`, `SceBytes` and the schema unit's records over `Inline` and
+   `Heap` with no default, the families folded, the conversion at one bound and its use at the door and at a link, the
+   generator naming the storage from the class and `Inline` with no deployment, a machine's maps likewise, and the
+   consumer's migration in `docs/SCE_CODEC_CONSUMER_MIGRATION.md`. Tests: in `backends/rust/portable-bytes`,
    `an_inline_collection_never_allocates_in_a_build_with_an_allocator` (a test binary built with `alloc` and a
    counting global allocator: a list, a text and a byte string held `Inline` and filled to their bounds allocate
-   nothing; red where the storage is still the feature's) and `a_collection_answers_alike_on_every_storage` (every
-   operation's answer, and equality, across `Inline` and `Heap`); in `sce-build/tests`,
-   `a_deployment_chooses_where_a_machine_keeps_its_collections.rs` (a machine holding a list, a text, a byte string
-   and a map names `Inline` for each when generated for an `mcu` machine, `Heap` for an `ap` machine, and none with
-   no deployment; red where the generator names none for a class). Every scenario of `static_datamodel` replays on
-   the Rust lane under both classes.
-3. **The queue's storage** (16.4, items 1 to 4): `queues.<queue>.storage`, `segment` and `allocator_progress` read by
+   nothing; red where the storage is still the feature's), `a_collection_answers_alike_on_every_storage` (every
+   operation's answer, and equality, across `Inline` and `Heap`) and `a_value_converts_between_storages_at_one_bound`;
+   in `sce-build/tests`, `a_deployment_chooses_where_a_machine_keeps_its_collections.rs` (a machine holding a list, a
+   text, a byte string and a map names `Inline` for each when generated for an `mcu` machine or with no deployment,
+   and `Heap` for an `ap` machine; red where the generator names none). Every scenario of `static_datamodel` replays
+   on the Rust lane under both classes.
+3. **An algorithm's lists and a codec's owned fields** (16.4): the check in `ListSpelling::push` on every lane,
+   `HeapList`'s refusal, the retirement of `GrowBytes`, `GrowStr` and `GrowVec` and the refusal of a storing form
+   with neither bound nor capacity. Tests: `an_algorithm_list_refuses_past_its_bound_on_every_lane`, a numerical
+   reference case (`tests/forge/conformance/numerical_reference.json`, generated by `gen_cases.py`) whose algorithm
+   appends one past its local's bound and must answer the capacity failure on every lane (red on a lane that grows);
+   and a refusal case of a codec whose field states neither.
+4. **The queue's storage** (16.5): `machines.<m>.queues.<queue>.storage`, `segment` and `allocator_progress` read by
    the deploy reader; `grown` over the sequential and locked rings on every lane with a heap that generates a queue,
-   Rust first; `queue/segmented-superseded` with its row in the acceptance document's appendix; the three documents
-   rewritten. Tests: `sce-build/tests/queue_kind.rs` refuses `<sce:segmented>`, `grown` on an `mcu` machine and
-   `grown` at `lock-free` for a `shared` queue, and accepts `grown` at `blocking`; the contract scenarios
-   (`tests/forge/conformance/queue_contract.json`) run on fixed, lent and grown storage
-   (`backends/rust/forge-conformance/tests/forge_queue.rs`), one of them filling a grown queue to `c`, refused at `c`
-   exactly, drained, and filled again (red where a grown queue takes one past `c`); the history checker judges the
+   Rust first; `queue/segmented-superseded` and `queue/grown-needs-alloc` with their rows in the acceptance document's
+   appendix, `queue/segmented-needs-alloc` retired; the three documents rewritten and the two grown ones added. Tests:
+   `sce-build/tests/queue_kind.rs` refuses `<sce:segmented>`, `grown` on an `mcu` machine, `grown` with an
+   interrupt-handler side and `grown` at `lock-free` for a `shared` queue, and accepts the two grown documents; the
+   contract scenarios (`tests/forge/conformance/queue_contract.json`) run on fixed, lent and grown storage
+   (`backends/rust/forge-conformance/tests/forge_queue.rs`), one of them filling a grown queue to `c`, refused at
+   `c` exactly, drained, and filled again (red where a grown queue takes one past `c`); the history checker judges the
    stress runs of a grown locked ring.
-4. **The intrusive bound** (16.4, item 5): the attribute, its reader and the refusal of an array past it on Rust, C++
-   and C11 (`an_intrusive_queue_refuses_an_array_past_its_capacity`, red where an array of `capacity + 1` nodes is
-   taken); the committed intrusive queue documents gain a capacity.
-5. **The documents** brought to this section, each where its step lands: RFC §synth-5-P (its storage modes and its
-   selection table), ADR 0108 D4 "Storage", ADR 0088 section 1, ADR 0157 D2's selection table, and
-   `docs/SCE_ACCEPTED_SUBSET.md` (the `queue` paragraphs and §2.15's Rust storage). ADR 0108, ADR 0088 and ADR 0157
-   carry an "Amended by: ADR 0086 section 16" line from this amendment on, so a reader of each finds it.
+5. **The intrusive bound** (16.5, item 7): the attribute, its reader, the constructors that answer, and the refusal
+   of an array past `capacity + 1` nodes on Rust, C++ and C11 (`an_intrusive_queue_refuses_an_array_past_its_capacity`,
+   red where an array of `capacity + 2` nodes is taken); the committed intrusive queue documents gain a capacity.
+6. **The inbox** (16.7): `machines.<m>.inbox.capacity` read and required on an `ap` machine, the hosted lanes'
+   inbox over the locked ring with `full`, and the GenMC and history tests of ADR 0147 run with a capacity on every
+   lane (`a_hosted_inbox_refuses_a_post_past_its_capacity`, red where a post past it is taken).
+7. **The memory budget** (16.1, item 7): `platform.memory_budget` and `deploy/memory-budget-exceeded`, with a case
+   one byte past a stated budget refused and one at it accepted.
+8. **A total of bytes and a variable's storage** (16.1, items 2 and 8): the bracket's `total` in `value_type.rs`,
+   its refusal, its answer on every lane that lowers the collection, the pool storage on Rust and C11, and
+   `machines.<m>.variables.<variable>.storage`. Tests: a scenario `static_list_total` of `static_datamodel`, replayed
+   on every lane, whose appends reach the total before the count and are answered `full` there (red where the count
+   alone is judged); a C11 size test that the machine of a list of 64 records of `bytes[1500]` with a total of 16384
+   reserves the total and not 64 times 1500; and a generator test that a variable named `grown` on an `ap` machine is
+   `Heap` while its siblings are the class's, and that `grown` on an `mcu` machine is refused.
+9. **The documents** brought to this section: RFC §synth-5-P (its storage modes, its selection table and its
+   "Amended by" line, which this amendment adds), ADR 0108 D4 "Storage", ADR 0088 section 1, ADR 0157 D2's selection
+   table, ADR 0084 D2, ADR 0077 section 7, `SCE_FORGE.md` §10's admission of `queue` (its dated note, which this
+   amendment adds), `schemas/sce-forge-ext.xsd` (`<sce:segmented>` withdrawn, `capacity` on `<sce:intrusive>`),
+   `apis/forge-ast.v1.schema.json`'s `QueueStorage` (a `pre-release` surface in `SCE_WIRE_CONTRACTS.md`), and
+   `docs/SCE_ACCEPTED_SUBSET.md` (the `queue` paragraphs and §2.15's Rust storage). ADR 0084, ADR 0088, ADR 0108,
+   ADR 0157 and the RFC carry an "Amended by: ADR 0086 section 16" line from this amendment on, so a reader of each
+   finds it.
+
+#### 16.10 Amended on acceptance
+
+Items 1 to 12 are the independent review's, by its number there; items 13 to 16 the consumer's. Each was accepted
+by the main session on 2026-11-29.
+
+1. An algorithm's lists and a codec's owned fields with no bound are kinds the first text missed: two rows in 16.2,
+   16.4, and step 3 of 16.9 (review 1).
+2. The three `segmented` documents keep `lock-free` over `fixed` storage, two grown documents are added, the
+   runtimes of the linked rings and LSCQ stay as candidates' bodies with their GenMC tests, and the progress lost is
+   stated (16.5, items 4 to 6; review 2).
+3. `grown` with an interrupt-handler side is refused as `queue/alloc-in-isr`, `grown` on an `mcu` machine as
+   `queue/grown-needs-alloc` at the deploy stage, and a grown push gives the lesser of its row's and its allocator's
+   progress (16.5, items 2 and 3; review 3).
+4. The engine's inbox is bounded on every lane (16.7; review 4), under the owner's delegation of 2026-11-29.
+5. No type has a default storage, a machine generated with no deployment names `Inline`, and the list and text
+   families fold into one each (16.3, item 1; review 5).
+6. The conversion at one bound between storages, and where it is applied (16.3, item 3; review 6).
+7. The admission of 2026-09-30 and ADR 0088's "takes no attribute" are cited as overturned, the word "unbounded" is
+   read as "grown to a declared bound", and the admission gains a dated note (this section's preamble; review 7),
+   under the owner's delegation of 2026-11-29.
+8. Step 8 of 16.9 names the grammar, the forge AST's `QueueStorage`, the admission's note and the RFC's pointer
+   (review 8).
+9. `platform.memory_budget` (16.1, item 7; review 9).
+10. The intrusive queue's stub, the constructors that answer, and "no bound the document states" (16.5, item 7; review
+    10).
+11. One vocabulary of storages, and the full key `machines.<m>.queues.<queue>.storage` (16.1, item 2; 16.5; review
+    11).
+12. Why a machine of `platform.class: mcu` holds fixed or lent storage, and how C++ grows (16.1, item 2; review 12).
+
+A downstream consumer reviewed the draft as its user on 2026-11-28. Its points, each accepted, are marked so:
+
+13. A bound on the sum of a collection's elements' bytes (16.1, item 8), from the consumer's review. It asked for it as
+    a storage; it is a bound of the type, since a storage never changes what a collection holds (16.1, item 3), and
+    the pool is the fixed storage of a collection that states one.
+14. The storage of one variable named by the deployment over its class's (16.1, item 2; 16.3, item 2), from the
+    consumer's review.
+15. An exploration's named bounds smaller than a deployment's, and the numbers a verdict ran at (16.1, item 6), from
+    the consumer's review.
+16. The residue of C11 on an application processor, which reserves each declared bound whole (16.1, item 2), from the
+    consumer's review.
 
 ## Landing order
 
@@ -1660,7 +1836,7 @@ Each step lands with a test that fails without it.
    could not forward the `by` of a `record_list.change`. A scalar field of a schema that also holds a list is a
    typed scalar like any other; `static_composed_send` forwards `counted.sent`'s list and its scalar `hops` on
    every lane.
-10. **No collection is unbounded** (section 16, added 2026-11-28), in the order section 16.6 gives.
+10. **No collection is unbounded** (section 16, added 2026-11-28), in the order section 16.9 gives.
 
 ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
 to 7 before the amendment of 2026-11-04 inserted step 4.) ADR 0085's amendment of 2026-11-08 applies this grammar to
