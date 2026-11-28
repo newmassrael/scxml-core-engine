@@ -1750,6 +1750,12 @@
           "promise": "broken"
         }
       ]
+    },
+    {
+      "module": "ValueService",
+      "decision": "docs/adr/0152",
+      "abstract": true,
+      "runs": []
     }
   ]
 }
