@@ -120,9 +120,12 @@ extension of it:
 - **Script engines on MCU targets.** `sce_scripting` remains
   forbidden when `platform.class = mcu`. AP may use `sce_scripting`
   orthogonally.
-- **Router-mode synthesis on MCU.** Global topology state is
-  unbounded across the network; forwarding and aggregation tables
-  cannot be bounded at build time without falsifying correctness.
+- **Router-mode synthesis on MCU.** Global topology state grows with
+  the network, not with the device. Every table is bounded by a
+  declared quota and refused at it (ADR 0086 section 16), and an MCU's
+  quota is too small for a router whose correctness asks it to hold a
+  route for every peer, so router mode stays off the MCU. (Amended
+  2026-11-29: a table is never unbounded; the reason is its quota.)
 
 ### §2.2 MVP deferrals (with migration paths)
 
@@ -1669,7 +1672,8 @@ Instantiation happens at import site:
 </sce:import>
 ```
 
-**Deferred to Phase 2** because v1 (non-parametric) suffices for the
+**Deferred to Phase 2** (withdrawn 2026-11-28, below) because v1
+(non-parametric) suffices for the
 crc/vle/keyexpr MVP (write three near-identical files; clean up once
 generics land). Worth pre-planning the XSD and IR shape so §5.A's body
 does not need rework.
@@ -4350,16 +4354,17 @@ Phase D — AP targets + migration enablers (weeks 27+)
     D.3.2  Recursive / tree types (§5.H) and graphs: out of Phase D
            since 2026-11-28, ADR 0164 (inductive data) and ADR 0165
            (graphs); see the amendment below
-    D.3.3  Dynamic aggregation kind — generalization of bounded-
-           collection with per-key index lookups; prerequisite for
-           AP router mode
+    D.3.3  Dynamic aggregation kind: superseded on 2026-11-29 by
+           ADR 0108's map, a table by key with a keyed index, which
+           has landed outside Phase D
     D.3.4  AP-mode unlock for deferred features: router-mode
            prerequisites, subscription aggregation skeleton
     D.3.5  API compat shim examples (`zenoh-c` / `zenoh-pico` drop-in
            wrappers on top of synthesized library)
     D.3.6  Target-plugin examples for BLE and Raweth drivers (not SCE
            core; demonstrates §5.I extensibility)
-    D.3.7  Tooling: multi-`-l`, `build`, `watch` (§6.3)
+    D.3.7  Tooling: multi-`-l`, `build`, `watch` (§6.3): out of
+           Phase D since 2026-11-29; see the amendment below
 
 Phase E — Additional AP targets (weeks 50+, post-D)
   E.1  AP macOS / FreeBSD via sce_link_runtime_kqueue
@@ -4403,7 +4408,20 @@ and D.3.2 leave Phase D, and each element is decided by a record of
 its own that lands in its own order of work: inductive data by ADR
 0164, graphs by ADR 0165, type parameters by ADR 0166, and the value
 that crosses within a macrostep, with the effect per element, by ADR
-0167. What stays in Phase D is what depends on an AP target.
+0167. What stays in Phase D is what depends on an AP target: the AP
+targets themselves (D.1, D.2) and AP router mode with its
+subscription aggregation (D.3.4). D.3.3 is superseded by ADR 0108's
+map. D.3.5's shims, D.3.6's plugin examples and D.3.7's tooling
+depend on a synthesized library, on §5.I's target plugins and on
+nothing respectively, not on an AP target; each is placed when a
+need names it, and no phase gates it.
+
+*Amended by: ADR 0164, ADR 0165, ADR 0166 and ADR 0167 (2026-11-29),
+under the owner's order of 2026-11-29 that these elements stand in
+SCE's order of work and not behind the parity gate.* The headings of
+§5.G and §5.H keep "(Phase 2)" as the design ledger's titles of those
+sections until its sections are imported from this text again; the
+amendments in their bodies are what they say.
 
 **New kinds referenced above.** §5.L (`bounded-collection`),
 §5.M (reassembly-pool variant + fragment FSM pattern), and §5.N
