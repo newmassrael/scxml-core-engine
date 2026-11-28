@@ -172,6 +172,11 @@
       "prose": "Check the door controller against the open and close buttons only, pressed in any order, at most four presses in one run."
     },
     {
+      "id": "project-board",
+      "kind": "view",
+      "prose": "Each person sees a board of the projects they may view: one line per project with its title and how many of its tasks are open, and the next five open tasks by due date with who they are assigned to. The board is kept up to date as tasks change, and a person never sees a project, a task or a count of tasks they may not view."
+    },
+    {
       "id": "client-only-build",
       "kind": "feature-model",
       "prose": "The session code is built in two shapes. A client build opens sessions and never accepts one; a server build also accepts incoming sessions. Accepting is only possible in a build that has sessions at all. The build options must name both capabilities so that a client build leaves the accepting code out entirely."

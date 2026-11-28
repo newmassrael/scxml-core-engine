@@ -7415,6 +7415,22 @@ pub enum GenerateError {
         language: String,
     },
 
+    /// docs/adr/0151, D10 (`view/backend-unsupported`): a view document, read and
+    /// checked into its plan, for a backend that does not lower a view. Rust is
+    /// the lane, from the plan, once the operators of its forge runtime land;
+    /// every other backend and the Interpreter refuse it by name.
+    #[error(
+        "view '{view}': the {language} backend does not lower a view: a view is lowered by the \
+         Rust lane alone, from its plan, over the operators of the Rust forge runtime, and every \
+         other backend and the Interpreter refuse it by name (docs/adr/0151, D10)"
+    )]
+    ViewBackendUnsupported {
+        /// The view's name.
+        view: String,
+        /// The target language's wire name.
+        language: String,
+    },
+
     /// `deploy.yaml`'s
     /// `platform.c11_section_attribute` is present but the codegen
     /// target backend is not C11. The section attribute injects

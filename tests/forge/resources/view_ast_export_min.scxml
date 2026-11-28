@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0151, D1: minimal view document for the forge_ast_export
+     round-trip drift guard: a viewer, a table filtered by a relation, a
+     public table and a table of another view, a join of each kind, a where,
+     a group of every column and an order, the smallest shape that carries
+     every field of a query. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="view"
+       name="view_ast_export_min">
+  <sce:import kind="event-schema" src="task.scxml" as="Task"/>
+  <sce:import kind="event-schema" src="person.scxml" as="Person"/>
+  <sce:import kind="event-schema" src="line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="row.scxml" as="Row"/>
+  <sce:import kind="view" src="access.scxml" as="Access"/>
+  <sce:import kind="view" src="lanes.scxml" as="Lanes"/>
+  <sce:viewer of="person"/>
+  <sce:table name="tasks" type="map&lt;uint64, record:Task&gt;[tasks_max=100]">
+    <sce:visible relations="Access" relation="viewer" object="row.project"/>
+  </sce:table>
+  <sce:table name="people" type="map&lt;uint64, record:Person&gt;[people_max=50]" public="true"/>
+  <sce:table name="lanes" view="Lanes"/>
+  <sce:query>
+    <sce:from table="tasks" as="t"/>
+    <sce:join table="lanes" as="l" on="l.row.id === t.row.lane"/>
+    <sce:join table="people" as="a" on="a.key === t.row.assignee" kind="left"/>
+    <sce:where cond="t.row.open"/>
+    <sce:group by="t.row.project">
+      <sce:field name="project" expr="t.row.project"/>
+      <sce:count name="open"/>
+      <sce:sum name="points" expr="t.row.points"/>
+      <sce:min name="first" expr="t.row.due"/>
+      <sce:max name="last" expr="t.row.due"/>
+      <sce:nest name="next" type="list&lt;record:Line&gt;[per_project=5]" order="t.row.due asc">
+        <sce:field name="title" expr="t.row.title"/>
+      </sce:nest>
+    </sce:group>
+    <sce:order by="open desc"/>
+  </sce:query>
+  <sce:result type="record:Row" key="project" bound="rows=20"/>
+</scxml>

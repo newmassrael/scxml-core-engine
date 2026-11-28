@@ -1105,6 +1105,7 @@ fn parse_forge_from_node(
         ForgeKind::TestSuite => parse_test_suite(root, label).map(ForgeDocument::TestSuite),
         ForgeKind::Properties => parse_properties(root, label).map(ForgeDocument::Properties),
         ForgeKind::Exploration => parse_exploration(root, label).map(ForgeDocument::Exploration),
+        ForgeKind::View => parse_view(root, label).map(ForgeDocument::View),
         // A `test-component` is a statechart (docs/SCE_TEST_PROFILE.md
         // §11.5), read by the statechart parser.
         kind @ (ForgeKind::Statechart | ForgeKind::TestComponent) => Err(located(
@@ -3630,6 +3631,960 @@ fn parse_exploration(
         outside,
         most,
         source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Read a `sce:kind="view"` document (docs/adr/0151, D1 and D5): its viewer,
+/// its tables and who may read their rows, and its query and result or its
+/// relations. The parser holds the document to its shape; the keys, the order,
+/// the filter of each table and the refusals that read the documents it imports
+/// are the plan's ([`crate::forge::view`]). A refusal is placed on the element
+/// that shows it.
+fn parse_view(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<ViewModel, Located<ForgeError>> {
+    let kind = ForgeKind::View;
+    let doc = label.diagnostic_label;
+
+    let viewers: Vec<roxmltree::Node> = sce_children(root, "viewer").collect();
+    if let Some(second) = viewers.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:viewer>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at most one <sce:viewer> per view document: a value is one viewer's".into(),
+            },
+        ));
+    }
+    let viewer = match viewers.first() {
+        Some(node) => {
+            let of = required_text(node, "<sce:viewer>", "of", doc)?;
+            let Some(of) = ViewerOf::from_attr(&of) else {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:viewer>".into(),
+                        attr: "of".into(),
+                        value: of,
+                        allowed: ViewerOf::ALL_NAMES.iter().map(|s| s.to_string()).collect(),
+                    },
+                ));
+            };
+            Some(ViewViewer {
+                of,
+                line: Some(row_of(node)),
+            })
+        }
+        None => None,
+    };
+
+    let table_nodes: Vec<roxmltree::Node> = sce_children(root, "table").collect();
+    let mut tables: Vec<ViewTable> = Vec::new();
+    for node in &table_nodes {
+        let table = read_view_table(node, doc)?;
+        if tables.iter().any(|t| t.name == table.name) {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "table".into(),
+                    id: table.name,
+                },
+            ));
+        }
+        tables.push(table);
+    }
+    if tables.is_empty() {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:table".into(),
+            },
+        ));
+    }
+
+    let queries: Vec<roxmltree::Node> = sce_children(root, "query").collect();
+    let results: Vec<roxmltree::Node> = sce_children(root, "result").collect();
+    let relations: Vec<roxmltree::Node> = sce_children(root, "relation").collect();
+    let body = match (queries.first(), relations.first()) {
+        (Some(_), Some(relation)) => {
+            return Err(located(
+                relation,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:relation>".into(),
+                    attr: "(element)".into(),
+                    value: String::new(),
+                    rule: "a view document is a query or a document of relations, never both: \
+                           a query reads the relations of another document through \
+                           <sce:visible relations>"
+                        .into(),
+                },
+            ))
+        }
+        (Some(query), None) => {
+            if let Some(second) = queries.get(1) {
+                return Err(one_per_view(second, "<sce:query>", doc));
+            }
+            let Some(result) = results.first() else {
+                return Err(located(
+                    root,
+                    doc,
+                    ValidationError::MissingElement {
+                        kind,
+                        element: "sce:result".into(),
+                    },
+                ));
+            };
+            if let Some(second) = results.get(1) {
+                return Err(one_per_view(second, "<sce:result>", doc));
+            }
+            ViewBody::Query(Box::new(read_view_query(query, result, doc)?))
+        }
+        (None, Some(_)) => {
+            if let Some(result) = results.first() {
+                return Err(located(
+                    result,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:result>".into(),
+                        attr: "(element)".into(),
+                        value: String::new(),
+                        rule: "a document of relations has no result: its relations are read \
+                               through the <sce:visible> of the views that import it"
+                            .into(),
+                    },
+                ));
+            }
+            if let Some(node) = viewers.first() {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:viewer>".into(),
+                        attr: "(element)".into(),
+                        value: String::new(),
+                        rule: "a document of relations has no viewer: a relation is read for \
+                               the viewer of the view whose filter joins it"
+                            .into(),
+                    },
+                ));
+            }
+            let tuples = match tables.as_slice() {
+                [one] => one,
+                [_, second, ..] => {
+                    return Err(located(
+                        &table_nodes[1],
+                        doc,
+                        ValidationError::AttributeRuleViolated {
+                            element: "<sce:table>".into(),
+                            attr: "name".into(),
+                            value: second.name.clone(),
+                            rule: "a document of relations reads one table, the tuples its \
+                                   relations are derived from"
+                                .into(),
+                        },
+                    ))
+                }
+                [] => unreachable!("a view without a table was refused above"),
+            };
+            if !matches!(
+                &tuples.source,
+                ViewTableSource::Type(ValueType::Set { key, .. })
+                    if matches!(**key, ValueType::Record { .. })
+            ) || tuples.visibility.is_some()
+            {
+                return Err(located(
+                    &table_nodes[0],
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:table>".into(),
+                        attr: "type".into(),
+                        value: tuples.name.clone(),
+                        rule: "the table of a document of relations is a set<record:Tuple>[B] of \
+                               relation tuples, with no <sce:visible> and no public: its rows are \
+                               read only for the viewer a filter joins them with"
+                            .into(),
+                    },
+                ));
+            }
+            let mut read: Vec<ViewRelation> = Vec::new();
+            for node in &relations {
+                let relation = read_view_relation(node, doc)?;
+                if read
+                    .iter()
+                    .any(|r| r.name == relation.name && r.object == relation.object)
+                {
+                    return Err(located(
+                        node,
+                        doc,
+                        ValidationError::DuplicateId {
+                            kind,
+                            what: "relation".into(),
+                            id: format!("{}#{}", relation.object, relation.name),
+                        },
+                    ));
+                }
+                read.push(relation);
+            }
+            ViewBody::Relations { relations: read }
+        }
+        (None, None) => {
+            return Err(located(
+                root,
+                doc,
+                ValidationError::MissingElement {
+                    kind,
+                    element: "sce:query".into(),
+                },
+            ))
+        }
+    };
+
+    Ok(ViewModel {
+        name: label.identifier.to_string(),
+        viewer,
+        tables,
+        body,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// The refusal of a second `element` in a view document.
+fn one_per_view(node: &roxmltree::Node, element: &str, doc: &str) -> Located<ForgeError> {
+    located(
+        node,
+        doc,
+        ValidationError::AttributeRuleViolated {
+            element: element.into(),
+            attr: "(element)".into(),
+            value: String::new(),
+            rule: format!("exactly one {element} per view document: a view has one value"),
+        },
+    )
+}
+
+/// One `<sce:table>` of a view: its name, its `type` or `view`, and who may read
+/// a row.
+fn read_view_table(node: &roxmltree::Node, doc: &str) -> Result<ViewTable, Located<ForgeError>> {
+    const ELEMENT: &str = "<sce:table>";
+    let name = required_text(node, ELEMENT, "name", doc)?;
+    let source = match (node.attribute("type"), node.attribute("view")) {
+        (Some(text), None) => {
+            let written =
+                read_written_type(node, doc, ELEMENT, "type", text, OptionalElems::OrRecord)?
+                    .resolve_limits(&mut crate::limits::resolve);
+            let ty = written
+                .bounded()
+                .map_err(|refusal| type_rule_refusal(node, doc, ELEMENT, "type", text, &refusal))?;
+            if !matches!(ty, ValueType::Map { .. } | ValueType::Set { .. }) {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element: ELEMENT.into(),
+                        attr: "type".into(),
+                        value: text.to_string(),
+                        rule: "a table is a map<K, V>[B] or a set<K>[B] of the machine \
+                               (docs/adr/0108): a view reads rows by key"
+                            .into(),
+                    },
+                ));
+            }
+            ViewTableSource::Type(ty)
+        }
+        (None, Some(view)) => {
+            let view = view.trim();
+            if view.is_empty() {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::EmptyValue {
+                        element: ELEMENT.into(),
+                        attr: "view".into(),
+                    },
+                ));
+            }
+            ViewTableSource::View(view.to_string())
+        }
+        (Some(_), Some(_)) => {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::IncompatibleAttributes {
+                    element: ELEMENT.into(),
+                    detail: "a table is of a type or of another view, not both".into(),
+                },
+            ))
+        }
+        (None, None) => {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::RequireEither {
+                    element: ELEMENT.into(),
+                    alternatives: vec!["type".into(), "view".into()],
+                },
+            ))
+        }
+    };
+    let public = match node.attribute("public").map(str::trim) {
+        None => false,
+        Some("true") => true,
+        Some(other) => {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::InvalidAttribute {
+                    element: ELEMENT.into(),
+                    attr: "public".into(),
+                    value: other.to_string(),
+                    allowed: vec!["true".into()],
+                },
+            ))
+        }
+    };
+    let visibles: Vec<roxmltree::Node> = sce_children(node, "visible").collect();
+    if let Some(second) = visibles.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:visible>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at most one <sce:visible> per table: a row is read by the viewers of one \
+                       relation"
+                    .into(),
+            },
+        ));
+    }
+    let visibility = match (public, visibles.first()) {
+        (true, Some(_)) => {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::IncompatibleAttributes {
+                    element: ELEMENT.into(),
+                    detail: "a table every viewer may read (public=\"true\") names no relation a \
+                             viewer must stand in (<sce:visible>)"
+                        .into(),
+                },
+            ))
+        }
+        (true, None) => Some(ViewVisibility::Public),
+        (false, Some(visible)) => Some(ViewVisibility::Relation {
+            relations: required_text(visible, "<sce:visible>", "relations", doc)?,
+            relation: required_text(visible, "<sce:visible>", "relation", doc)?,
+            object: required_text(visible, "<sce:visible>", "object", doc)?,
+        }),
+        (false, None) => None,
+    };
+    Ok(ViewTable {
+        name,
+        source,
+        visibility,
+        line: Some(row_of(node)),
+    })
+}
+
+/// The operators a `<sce:query>` holds, in the order they are written.
+const VIEW_QUERY_STEPS: &[&str] = &["from", "join", "where", "group", "select", "order"];
+
+/// The columns a `<sce:group>` gives.
+const VIEW_GROUP_OUTPUTS: &[&str] = &["field", "count", "sum", "min", "max", "nest"];
+
+/// A `<sce:query>` and its `<sce:result>`: one `<sce:from>` first, then any
+/// number of `<sce:join>` and `<sce:where>` in the order they apply, then one
+/// `<sce:group>` or `<sce:select>`, then at most one `<sce:order>`.
+fn read_view_query(
+    query: &roxmltree::Node,
+    result: &roxmltree::Node,
+    doc: &str,
+) -> Result<ViewQuery, Located<ForgeError>> {
+    let misplaced = |node: &roxmltree::Node, rule: &str| {
+        located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: format!("<sce:{}>", node.tag_name().name()),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: rule.to_string(),
+            },
+        )
+    };
+    let mut from: Option<ViewSource> = None;
+    let mut steps: Vec<ViewStep> = Vec::new();
+    let mut shape: Option<ViewShape> = None;
+    let mut order: Option<(Vec<ViewOrderKey>, u32)> = None;
+    let mut aliases: Vec<String> = Vec::new();
+    for node in sce_children_among(query, VIEW_QUERY_STEPS) {
+        let element = node.tag_name().name();
+        if element != "from" && from.is_none() {
+            return Err(misplaced(
+                &node,
+                "a query begins with one <sce:from>, the table its rows are first read from",
+            ));
+        }
+        if order.is_some() {
+            return Err(misplaced(
+                &node,
+                "<sce:order> is the last operator of a query",
+            ));
+        }
+        if shape.is_some() && element != "order" {
+            return Err(misplaced(
+                &node,
+                "a query projects its rows once, by one <sce:group> or one <sce:select>, and \
+                 only an <sce:order> follows it",
+            ));
+        }
+        match element {
+            "from" => {
+                if from.is_some() {
+                    return Err(misplaced(&node, "a query has one <sce:from>"));
+                }
+                let source = ViewSource {
+                    table: required_text(&node, "<sce:from>", "table", doc)?,
+                    alias: required_text(&node, "<sce:from>", "as", doc)?,
+                    line: Some(row_of(&node)),
+                };
+                aliases.push(source.alias.clone());
+                from = Some(source);
+            }
+            "join" => {
+                let alias = required_text(&node, "<sce:join>", "as", doc)?;
+                if aliases.contains(&alias) {
+                    return Err(located(
+                        &node,
+                        doc,
+                        ValidationError::DuplicateId {
+                            kind: ForgeKind::View,
+                            what: "alias".into(),
+                            id: alias,
+                        },
+                    ));
+                }
+                let kind = match node.attribute("kind").map(str::trim) {
+                    None | Some("inner") => ViewJoinKind::Inner,
+                    Some("left") => ViewJoinKind::Left,
+                    Some(other) => {
+                        return Err(located(
+                            &node,
+                            doc,
+                            ValidationError::InvalidAttribute {
+                                element: "<sce:join>".into(),
+                                attr: "kind".into(),
+                                value: other.to_string(),
+                                allowed: vec!["inner".into(), "left".into()],
+                            },
+                        ))
+                    }
+                };
+                aliases.push(alias.clone());
+                steps.push(ViewStep::Join(ViewJoin {
+                    table: required_text(&node, "<sce:join>", "table", doc)?,
+                    alias,
+                    on: required_text(&node, "<sce:join>", "on", doc)?,
+                    kind,
+                    line: Some(row_of(&node)),
+                }));
+            }
+            "where" => steps.push(ViewStep::Where(ViewWhere {
+                cond: required_text(&node, "<sce:where>", "cond", doc)?,
+                line: Some(row_of(&node)),
+            })),
+            "group" => shape = Some(ViewShape::Group(read_view_group(&node, doc)?)),
+            "select" => {
+                let fields = read_view_fields(&node, "<sce:select>", doc)?;
+                shape = Some(ViewShape::Select(ViewSelect {
+                    fields,
+                    line: Some(row_of(&node)),
+                }));
+            }
+            "order" => {
+                let by = required_text(&node, "<sce:order>", "by", doc)?;
+                order = Some((
+                    read_view_order(&node, "<sce:order>", "by", &by, doc)?,
+                    row_of(&node),
+                ));
+            }
+            other => {
+                unreachable!("sce_children_among hands out only {VIEW_QUERY_STEPS:?}, not {other}")
+            }
+        }
+    }
+    let Some(from) = from else {
+        return Err(located(
+            query,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::View,
+                element: "sce:from".into(),
+            },
+        ));
+    };
+    let Some(shape) = shape else {
+        return Err(located(
+            query,
+            doc,
+            ValidationError::RequireEither {
+                element: "<sce:query>".into(),
+                alternatives: vec!["<sce:group>".into(), "<sce:select>".into()],
+            },
+        ));
+    };
+    let (order, order_line) = match order {
+        Some((keys, line)) => (keys, Some(line)),
+        None => (Vec::new(), None),
+    };
+    Ok(ViewQuery {
+        from,
+        steps,
+        shape,
+        order,
+        order_line,
+        result: read_view_result(result, doc)?,
+        line: Some(row_of(query)),
+    })
+}
+
+/// `<sce:group by>` and its columns, each name once.
+fn read_view_group(node: &roxmltree::Node, doc: &str) -> Result<ViewGroup, Located<ForgeError>> {
+    let by_text = required_text(node, "<sce:group>", "by", doc)?;
+    let by = split_view_list(&by_text);
+    if by.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::EmptyValue {
+                element: "<sce:group>".into(),
+                attr: "by".into(),
+            },
+        ));
+    }
+    let mut outputs: Vec<ViewGroupOutput> = Vec::new();
+    for child in sce_children_among(node, VIEW_GROUP_OUTPUTS) {
+        let element = child.tag_name().name();
+        let tag = format!("<sce:{element}>");
+        let name = required_text(&child, &tag, "name", doc)?;
+        let line = Some(row_of(&child));
+        let field = |expr: String| ViewOutputField {
+            name: name.clone(),
+            expr,
+            line,
+        };
+        let output = match element {
+            "field" => ViewGroupOutput::Field(field(required_text(&child, &tag, "expr", doc)?)),
+            "count" => ViewGroupOutput::Count {
+                name: name.clone(),
+                line,
+            },
+            "sum" => ViewGroupOutput::Sum(field(required_text(&child, &tag, "expr", doc)?)),
+            "min" => ViewGroupOutput::Min(field(required_text(&child, &tag, "expr", doc)?)),
+            "max" => ViewGroupOutput::Max(field(required_text(&child, &tag, "expr", doc)?)),
+            "nest" => ViewGroupOutput::Nest(read_view_nest(&child, name.clone(), doc)?),
+            other => unreachable!(
+                "sce_children_among hands out only {VIEW_GROUP_OUTPUTS:?}, not {other}"
+            ),
+        };
+        if outputs.iter().any(|o| o.name() == name) {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::View,
+                    what: "column".into(),
+                    id: name,
+                },
+            ));
+        }
+        outputs.push(output);
+    }
+    if outputs.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::MissingElement {
+                kind: ForgeKind::View,
+                element: "sce:field".into(),
+            },
+        ));
+    }
+    Ok(ViewGroup {
+        by,
+        outputs,
+        line: Some(row_of(node)),
+    })
+}
+
+/// The `<sce:field name expr>` children of `node`, at least one, each name once.
+fn read_view_fields(
+    node: &roxmltree::Node,
+    element: &str,
+    doc: &str,
+) -> Result<Vec<ViewOutputField>, Located<ForgeError>> {
+    let mut fields: Vec<ViewOutputField> = Vec::new();
+    for child in sce_children(node, "field") {
+        let field = ViewOutputField {
+            name: required_text(&child, "<sce:field>", "name", doc)?,
+            expr: required_text(&child, "<sce:field>", "expr", doc)?,
+            line: Some(row_of(&child)),
+        };
+        if fields.iter().any(|f| f.name == field.name) {
+            return Err(located(
+                &child,
+                doc,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::View,
+                    what: "field".into(),
+                    id: field.name,
+                },
+            ));
+        }
+        fields.push(field);
+    }
+    if fields.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: element.into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "at least one <sce:field name expr>: a row of no column is no row".into(),
+            },
+        ));
+    }
+    Ok(fields)
+}
+
+/// `<sce:nest name type order>`: a `list<record:R>[B]` of the group's rows, each
+/// of its fields.
+fn read_view_nest(
+    node: &roxmltree::Node,
+    name: String,
+    doc: &str,
+) -> Result<ViewNest, Located<ForgeError>> {
+    const ELEMENT: &str = "<sce:nest>";
+    let text = required_text(node, ELEMENT, "type", doc)?;
+    let ty = read_written_type(node, doc, ELEMENT, "type", &text, OptionalElems::OrRecord)?
+        .resolve_limits(&mut crate::limits::resolve)
+        .bounded()
+        .map_err(|refusal| type_rule_refusal(node, doc, ELEMENT, "type", &text, &refusal))?;
+    if !matches!(&ty, ValueType::List { elem, .. } if matches!(**elem, ValueType::Record { .. })) {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: ELEMENT.into(),
+                attr: "type".into(),
+                value: text,
+                rule: "a nest is a list<record:R>[B]: one record per row of its group, cut by \
+                       its order at its bound"
+                    .into(),
+            },
+        ));
+    }
+    let order = match node.attribute("order") {
+        Some(written) => read_view_order(node, ELEMENT, "order", written, doc)?,
+        None => Vec::new(),
+    };
+    Ok(ViewNest {
+        name,
+        ty,
+        order,
+        fields: read_view_fields(node, ELEMENT, doc)?,
+        line: Some(row_of(node)),
+    })
+}
+
+/// The keys an order attribute lists: expressions separated by commas, each
+/// followed by `asc` or `desc` or by neither, which is ascending.
+fn read_view_order(
+    node: &roxmltree::Node,
+    element: &str,
+    attr: &str,
+    written: &str,
+    doc: &str,
+) -> Result<Vec<ViewOrderKey>, Located<ForgeError>> {
+    let mut keys: Vec<ViewOrderKey> = Vec::new();
+    for item in split_view_list(written) {
+        let (expr, descending) = match item.rsplit_once(char::is_whitespace) {
+            Some((expr, "desc")) => (expr.trim(), true),
+            Some((expr, "asc")) => (expr.trim(), false),
+            _ => (item.as_str(), false),
+        };
+        if expr.is_empty() {
+            return Err(located(
+                node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: element.into(),
+                    attr: attr.into(),
+                    value: written.to_string(),
+                    rule: "each key of an order is an expression, then asc or desc or neither"
+                        .into(),
+                },
+            ));
+        }
+        keys.push(ViewOrderKey {
+            expr: expr.to_string(),
+            descending,
+        });
+    }
+    if keys.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::EmptyValue {
+                element: element.into(),
+                attr: attr.into(),
+            },
+        ));
+    }
+    Ok(keys)
+}
+
+/// `<sce:result type key bound>`: a record of an imported event schema, the
+/// fields of it the result is keyed by, and its bound, a number or `name=N`.
+fn read_view_result(node: &roxmltree::Node, doc: &str) -> Result<ViewResult, Located<ForgeError>> {
+    const ELEMENT: &str = "<sce:result>";
+    let text = required_text(node, ELEMENT, "type", doc)?;
+    let ty = read_written_type(node, doc, ELEMENT, "type", &text, OptionalElems::OrRecord)?;
+    let WrittenType::Record { alias: record } = ty else {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: ELEMENT.into(),
+                attr: "type".into(),
+                value: text,
+                rule: "a row of a result is a record of an imported event schema, record:<alias>"
+                    .into(),
+            },
+        ));
+    };
+    let key_text = required_text(node, ELEMENT, "key", doc)?;
+    let key: Vec<String> = key_text
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    let bound_text = required_text(node, ELEMENT, "bound", doc)?;
+    let Some(bound) = read_view_bound(&bound_text) else {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: ELEMENT.into(),
+                attr: "bound".into(),
+                value: bound_text,
+                rule: "a bound is a count from 1 to 4294967295, or name=count, a count a build \
+                       may move by its name (docs/adr/0050)"
+                    .into(),
+            },
+        ));
+    };
+    Ok(ViewResult {
+        record,
+        key,
+        bound,
+        line: Some(row_of(node)),
+    })
+}
+
+/// A bound as a type's bracket spells it, without the bracket: `N` or
+/// `name=N`, `N` above 0, the number a build gives the name in its place.
+fn read_view_bound(text: &str) -> Option<Bound> {
+    let text = text.trim();
+    let (name, count) = match text.split_once('=') {
+        Some((name, count)) => (Some(name.trim()), count.trim()),
+        None => (None, text),
+    };
+    let max = parse_int(count).filter(|n| *n > 0)?;
+    match name {
+        None => Some(Bound::of(max)),
+        Some(name) => {
+            let well_formed = !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+            well_formed.then(|| Bound::named(name, crate::limits::resolve(name, max)))
+        }
+    }
+}
+
+/// The items of a list attribute, split at its commas that stand outside every
+/// parenthesis, bracket and string literal, each trimmed; empty items dropped.
+fn split_view_list(text: &str) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut current = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if let Some(open) = quote {
+            current.push(c);
+            if c == '\\' {
+                if let Some(escaped) = chars.next() {
+                    current.push(escaped);
+                }
+            } else if c == open {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => {
+                quote = Some(c);
+                current.push(c);
+            }
+            '(' | '[' => {
+                depth += 1;
+                current.push(c);
+            }
+            ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                current.push(c);
+            }
+            ',' if depth == 0 => items.push(std::mem::take(&mut current)),
+            _ => current.push(c),
+        }
+    }
+    items.push(current);
+    items
+        .into_iter()
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+/// The rewrites `<sce:relation>`, `<sce:all>` and `<sce:but-not>` hold.
+const VIEW_REWRITE_TERMS: &[&str] = &["direct", "computed", "through", "all", "but-not"];
+
+/// One `<sce:relation name object>` of a document of relations (docs/adr/0151,
+/// D5).
+fn read_view_relation(
+    node: &roxmltree::Node,
+    doc: &str,
+) -> Result<ViewRelation, Located<ForgeError>> {
+    Ok(ViewRelation {
+        name: required_text(node, "<sce:relation>", "name", doc)?,
+        object: required_text(node, "<sce:relation>", "object", doc)?,
+        rewrite: read_view_rewrite(node, RewriteCombine::Union, doc)?,
+        line: Some(row_of(node)),
+    })
+}
+
+/// The rewrite `node`'s children write, its terms combined by `combine`: at
+/// least one term, and at most one `<sce:but-not>`, whose own children are united.
+fn read_view_rewrite(
+    node: &roxmltree::Node,
+    combine: RewriteCombine,
+    doc: &str,
+) -> Result<RelationRewrite, Located<ForgeError>> {
+    let element = format!("<sce:{}>", node.tag_name().name());
+    let mut terms: Vec<RewriteTerm> = Vec::new();
+    let mut excluded: Option<Box<RelationRewrite>> = None;
+    for child in sce_children_among(node, VIEW_REWRITE_TERMS) {
+        let term = match child.tag_name().name() {
+            "direct" => {
+                let mut subjects: Vec<SubjectSet> = Vec::new();
+                for token in child.attribute("subjects").unwrap_or("").split_whitespace() {
+                    let Some((object, relation)) = token
+                        .split_once('#')
+                        .filter(|(o, r)| !o.is_empty() && !r.is_empty())
+                    else {
+                        return Err(located(
+                            &child,
+                            doc,
+                            ValidationError::AttributeRuleViolated {
+                                element: "<sce:direct>".into(),
+                                attr: "subjects".into(),
+                                value: token.to_string(),
+                                rule: "a set of principals is object#relation: the subjects of \
+                                       a relation of an object of that type"
+                                    .into(),
+                            },
+                        ));
+                    };
+                    subjects.push(SubjectSet {
+                        object: object.to_string(),
+                        relation: relation.to_string(),
+                    });
+                }
+                RewriteTerm::Direct { subjects }
+            }
+            "computed" => RewriteTerm::Computed {
+                relation: required_text(&child, "<sce:computed>", "relation", doc)?,
+            },
+            "through" => RewriteTerm::Through {
+                relation: required_text(&child, "<sce:through>", "relation", doc)?,
+                then: required_text(&child, "<sce:through>", "then", doc)?,
+            },
+            "all" => RewriteTerm::All(read_view_rewrite(
+                &child,
+                RewriteCombine::Intersection,
+                doc,
+            )?),
+            "but-not" => {
+                if excluded.is_some() {
+                    return Err(located(
+                        &child,
+                        doc,
+                        ValidationError::AttributeRuleViolated {
+                            element: "<sce:but-not>".into(),
+                            attr: "(element)".into(),
+                            value: String::new(),
+                            rule: format!(
+                                "at most one <sce:but-not> under {element}: write every \
+                                 exclusion as a child of it"
+                            ),
+                        },
+                    ));
+                }
+                excluded = Some(Box::new(read_view_rewrite(
+                    &child,
+                    RewriteCombine::Union,
+                    doc,
+                )?));
+                continue;
+            }
+            other => unreachable!(
+                "sce_children_among hands out only {VIEW_REWRITE_TERMS:?}, not {other}"
+            ),
+        };
+        terms.push(term);
+    }
+    if terms.is_empty() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "a rewrite derives its subjects from at least one <sce:direct>, \
+                       <sce:computed>, <sce:through> or <sce:all>; an exclusion alone derives \
+                       none"
+                    .into(),
+            },
+        ));
+    }
+    Ok(RelationRewrite {
+        combine,
+        terms,
+        excluded,
     })
 }
 

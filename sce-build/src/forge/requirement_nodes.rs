@@ -161,7 +161,8 @@ pub fn requirement_nodes(parsed: &ParsedForge) -> Vec<ForgeReqNode> {
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_)
         | ForgeDocument::Properties(_)
-        | ForgeDocument::Exploration(_) => vec![root()],
+        | ForgeDocument::Exploration(_)
+        | ForgeDocument::View(_) => vec![root()],
     }
 }
 

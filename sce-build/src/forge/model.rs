@@ -251,6 +251,15 @@ pub enum ForgeKind {
     /// by `sce-codegen formal properties`; it emits nothing of its own on any
     /// backend.
     Exploration,
+    /// A read model — docs/adr/0151, D1: a relational query over bounded keyed
+    /// tables (from, join, where, group, select, order) read into a typed plan
+    /// the build makes before anything runs, its key inferred, its order total
+    /// and every table read through the filter of the viewer's relations (D6);
+    /// or a document of relations, the rewrites a viewer's relations are
+    /// derived by (D5). Rust is its lane (D10); until the lane lands, and on
+    /// every other backend, generation refuses it by name
+    /// (`view/backend-unsupported`).
+    View,
 }
 
 impl ForgeKind {
@@ -327,6 +336,7 @@ impl ForgeKind {
         "test-suite",
         "properties",
         "exploration",
+        "view",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -373,6 +383,7 @@ impl ForgeKind {
             Self::TestSuite => "test-suite",
             Self::Properties => "properties",
             Self::Exploration => "exploration",
+            Self::View => "view",
         }
     }
 
@@ -410,6 +421,7 @@ impl ForgeKind {
             "test-suite" => Some(Self::TestSuite),
             "properties" => Some(Self::Properties),
             "exploration" => Some(Self::Exploration),
+            "view" => Some(Self::View),
             _ => None,
         }
     }
@@ -507,6 +519,9 @@ impl ForgeKind {
             // docs/adr/0115, D15: the documents of a formal judgement emit
             // nothing, so nothing of them is held.
             Self::Properties | Self::Exploration => false,
+            // docs/adr/0151, D9: a view's value is held by the machine whose
+            // variable it is, and its document is never held as an instance.
+            Self::View => false,
         }
     }
 
@@ -611,6 +626,10 @@ impl ForgeKind {
             Self::TestPortType => RuntimeDep::None,
             // A declaration emits nothing, so it depends on nothing.
             Self::Properties | Self::Exploration => RuntimeDep::None,
+            // docs/adr/0151, D4: the operators are written once, in the forge
+            // runtime's `view` module, and a view's code is the circuit that
+            // connects them.
+            Self::View => RuntimeDep::ForgeRuntime,
         }
     }
 
@@ -649,6 +668,7 @@ impl ForgeKind {
                 | Self::TestSuite
                 | Self::Properties
                 | Self::Exploration
+                | Self::View
         )
     }
 }
@@ -687,6 +707,7 @@ impl std::fmt::Display for ForgeKind {
             Self::TestSuite => write!(f, "test-suite"),
             Self::Properties => write!(f, "properties"),
             Self::Exploration => write!(f, "exploration"),
+            Self::View => write!(f, "view"),
         }
     }
 }
@@ -7574,6 +7595,9 @@ pub enum ForgeDocument {
     /// [`ExplorationModel`].
     #[serde(rename = "exploration")]
     Exploration(ExplorationModel),
+    /// A read model, or a document of relations. See [`ViewModel`].
+    #[serde(rename = "view")]
+    View(ViewModel),
 }
 
 impl ForgeDocument {
@@ -7609,6 +7633,7 @@ impl ForgeDocument {
             Self::TestSuite(m) => &m.name,
             Self::Properties(m) => &m.name,
             Self::Exploration(m) => &m.name,
+            Self::View(m) => &m.name,
         }
     }
 
@@ -7646,6 +7671,7 @@ impl ForgeDocument {
             Self::TestSuite(_) => ForgeKind::TestSuite,
             Self::Properties(_) => ForgeKind::Properties,
             Self::Exploration(_) => ForgeKind::Exploration,
+            Self::View(_) => ForgeKind::View,
         }
     }
 
@@ -7740,6 +7766,9 @@ impl ForgeDocument {
             // and are read by the judge, never through an alias
             // (docs/adr/0115, D15).
             Self::Properties(_) | Self::Exploration(_) => return None,
+            // A view's value is read where a machine holds it (docs/adr/0151,
+            // D9), never through the alias of its document as a record.
+            Self::View(_) => return None,
         })
     }
 
@@ -7851,6 +7880,7 @@ impl ForgeDocument {
             }
             // A declaration emits nothing, so it depends on nothing.
             Self::Properties(_) | Self::Exploration(_) => RuntimeDep::None,
+            Self::View(_) => self.kind().max_runtime_dep(),
         }
     }
 }
@@ -7984,6 +8014,414 @@ pub struct ExplorationModel {
     /// as a whole names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+}
+
+// ── View kind ──────────────────────────────────────────────────
+
+/// View document — docs/adr/0151, D1 and D5: a read model, a relational query
+/// over bounded keyed tables, or a document of relations, the rewrites a
+/// viewer's relations are derived by.
+///
+/// Schema (per `<scxml sce:kind="view">` body): at most one `<sce:viewer of>`
+/// (D6); one `<sce:table name>` per input table, of a `type` (a `map<K, V>[B]` or a
+/// `set<K>[B]`) or of another `view` (D3), each saying who may read a row by one
+/// `<sce:visible relations relation object>` or `public="true"`; then either one
+/// `<sce:query>` and one `<sce:result>`, or one `<sce:relation>` per derived relation. The
+/// parser holds the document to its shape; what needs the documents it imports
+/// (the keys, the total order, the filter of each table, the bounds and the
+/// refusals of D11) is judged where its plan is made ([`crate::forge::view`]).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewModel {
+    pub name: String,
+    /// The `<sce:viewer of>`, when the view's value is a value per viewer (D6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<ViewViewer>,
+    /// The `<sce:table>` elements in document order.
+    pub tables: Vec<ViewTable>,
+    /// The query and its result, or the relations.
+    pub body: ViewBody,
+    /// Post-preprocessor source position of the `<scxml sce:kind="view">` root
+    /// element, which a refusal of the document as a whole names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl ViewModel {
+    /// The table named `name`.
+    pub fn table(&self, name: &str) -> Option<&ViewTable> {
+        self.tables.iter().find(|t| t.name == name)
+    }
+}
+
+/// The `<sce:viewer>` of a [`ViewModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewViewer {
+    pub of: ViewerOf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// Who a viewer is (docs/adr/0151, D6): the person a delegation names
+/// (docs/adr/0116, D1) or the instance a request comes from (docs/adr/0113,
+/// D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum ViewerOf {
+    Person,
+    Instance,
+}
+
+impl ViewerOf {
+    /// Every value `of` takes, as written.
+    pub const ALL_NAMES: &'static [&'static str] = &["person", "instance"];
+
+    /// The value as `<sce:viewer of>` writes it.
+    pub fn as_attr(self) -> &'static str {
+        match self {
+            Self::Person => "person",
+            Self::Instance => "instance",
+        }
+    }
+
+    /// The viewer `of` names, or `None` for a value it does not take.
+    pub fn from_attr(of: &str) -> Option<Self> {
+        match of {
+            "person" => Some(Self::Person),
+            "instance" => Some(Self::Instance),
+            _ => None,
+        }
+    }
+}
+
+/// One `<sce:table>` of a [`ViewModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewTable {
+    /// The name the query reads the table by and a machine binds it by.
+    pub name: String,
+    pub source: ViewTableSource,
+    /// Who may read a row; `None` where the document says neither, which
+    /// the plan refuses for a table of a type (D6) and takes for a table of a
+    /// view, whose rows are already its viewer's (D3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<ViewVisibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// What a table's rows are.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum ViewTableSource {
+    /// `type`: a map or a set of the machine that binds it (docs/adr/0108).
+    Type(crate::forge::value_type::ValueType),
+    /// `view`: the result of the view imported under this alias (D3).
+    View(String),
+}
+
+/// Who may read a row of a table (docs/adr/0151, D6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "visible", rename_all = "kebab-case")]
+pub enum ViewVisibility {
+    /// `public="true"`: every viewer may read it all.
+    Public,
+    /// `<sce:visible relations relation object>`: a row may be read by the
+    /// viewers that stand in `relation` to the object `object` names, the relation
+    /// derived by the document of relations imported as `relations`. `object` is
+    /// an expression over the row's `key` and `row`.
+    Relation {
+        relations: String,
+        relation: String,
+        object: String,
+    },
+}
+
+/// The body of a view document: a query, or relations (D5).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "body", rename_all = "kebab-case")]
+pub enum ViewBody {
+    Query(Box<ViewQuery>),
+    Relations { relations: Vec<ViewRelation> },
+}
+
+/// The `<sce:query>` and the `<sce:result>` of a view (docs/adr/0151, D1 and D2).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewQuery {
+    pub from: ViewSource,
+    /// The `<sce:join>` and `<sce:where>` elements in document order, each over
+    /// the rows of the ones before it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ViewStep>,
+    pub shape: ViewShape,
+    /// The `<sce:order by>` keys as written; the build appends the result's key
+    /// (D2). Empty where no `<sce:order>` is written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<ViewOrderKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_line: Option<u32>,
+    pub result: ViewResult,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// The table a `<sce:from>` reads and the alias its rows are named by.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewSource {
+    pub table: String,
+    pub alias: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// A `<sce:join>` or a `<sce:where>` of a query.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "step", rename_all = "kebab-case")]
+pub enum ViewStep {
+    Join(ViewJoin),
+    Where(ViewWhere),
+}
+
+/// `<sce:join table as on kind>`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewJoin {
+    pub table: String,
+    pub alias: String,
+    /// The condition a pair of rows joins on, an expression over the aliases
+    /// before it and this one.
+    pub on: String,
+    pub kind: ViewJoinKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// An inner join, or a left join, whose right side is of an optional type
+/// (docs/adr/0151, D1; docs/adr/0055).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum ViewJoinKind {
+    Inner,
+    Left,
+}
+
+/// `<sce:where cond>`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewWhere {
+    pub cond: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// What a query's rows are projected to: one row per group, or one row per
+/// row.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "shape", rename_all = "kebab-case")]
+pub enum ViewShape {
+    Group(ViewGroup),
+    Select(ViewSelect),
+}
+
+/// `<sce:group by>` and what each group gives.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewGroup {
+    /// The expressions the rows are grouped by, as `by` lists them.
+    pub by: Vec<String>,
+    pub outputs: Vec<ViewGroupOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// One column a group gives.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "output", rename_all = "kebab-case")]
+pub enum ViewGroupOutput {
+    /// `<sce:field name expr>`: a value the group's `by` determines.
+    Field(ViewOutputField),
+    /// `<sce:count name>`: the rows of the group.
+    Count {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<u32>,
+    },
+    /// `<sce:sum name expr>`.
+    Sum(ViewOutputField),
+    /// `<sce:min name expr>`.
+    Min(ViewOutputField),
+    /// `<sce:max name expr>`.
+    Max(ViewOutputField),
+    /// `<sce:nest name type order>`: the group's rows as a list.
+    Nest(ViewNest),
+}
+
+impl ViewGroupOutput {
+    /// The column's name.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Field(f) | Self::Sum(f) | Self::Min(f) | Self::Max(f) => &f.name,
+            Self::Count { name, .. } => name,
+            Self::Nest(n) => &n.name,
+        }
+    }
+
+    /// The element it is written as, without its prefix.
+    pub fn element(&self) -> &'static str {
+        match self {
+            Self::Field(_) => "field",
+            Self::Count { .. } => "count",
+            Self::Sum(_) => "sum",
+            Self::Min(_) => "min",
+            Self::Max(_) => "max",
+            Self::Nest(_) => "nest",
+        }
+    }
+
+    /// The row the element is written on.
+    pub fn line(&self) -> Option<u32> {
+        match self {
+            Self::Field(f) | Self::Sum(f) | Self::Min(f) | Self::Max(f) => f.line,
+            Self::Count { line, .. } => *line,
+            Self::Nest(n) => n.line,
+        }
+    }
+}
+
+/// A named column and the expression it is computed by.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewOutputField {
+    pub name: String,
+    pub expr: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// `<sce:select>`: one row per row, of the fields it names.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewSelect {
+    pub fields: Vec<ViewOutputField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// `<sce:nest name type order>` and its fields.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewNest {
+    pub name: String,
+    /// The list it is, `list<record:R>[B]`: its bound cuts it by its order (D2).
+    #[serde(rename = "type")]
+    pub ty: crate::forge::value_type::ValueType,
+    /// The order its rows are held in, as written; the build completes it by
+    /// the key of the rows it holds (D2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<ViewOrderKey>,
+    pub fields: Vec<ViewOutputField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// One key of an order: an expression, ascending unless `desc` is written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewOrderKey {
+    pub expr: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub descending: bool,
+}
+
+/// `<sce:result type key bound>` (docs/adr/0151, D2).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewResult {
+    /// The alias of the event schema whose record a row of the result is.
+    pub record: String,
+    /// The fields of that record the result is keyed by.
+    pub key: Vec<String>,
+    /// The most rows the value holds, cut by the order (D2), by name (D8).
+    pub bound: crate::forge::value_type::Bound,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// One `<sce:relation name object>` of a document of relations (docs/adr/0151,
+/// D5): the relation `name` of an object of the type `object`, as Zanzibar's
+/// namespace rewrites derive it.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ViewRelation {
+    pub name: String,
+    pub object: String,
+    pub rewrite: RelationRewrite,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+/// A rewrite: its terms combined, less what its `<sce:but-not>` excludes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RelationRewrite {
+    pub combine: RewriteCombine,
+    pub terms: Vec<RewriteTerm>,
+    /// The `<sce:but-not>`: the subjects its own rewrite derives are taken out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excluded: Option<Box<RelationRewrite>>,
+}
+
+/// How a rewrite's terms are combined: the children of a relation and of a
+/// `<sce:but-not>` are united, those of an `<sce:all>` intersected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum RewriteCombine {
+    Union,
+    Intersection,
+}
+
+/// One term of a rewrite (Zanzibar's `_this`, computed userset and tuple to
+/// userset, and an intersection of terms).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "term", rename_all = "kebab-case")]
+pub enum RewriteTerm {
+    /// `<sce:direct subjects>`: the subjects of the tuples of this relation
+    /// on the object, a principal, or a set of principals expanded through
+    /// one of the relations `subjects` names.
+    Direct {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        subjects: Vec<SubjectSet>,
+    },
+    /// `<sce:computed relation>`: the subjects of another relation of the
+    /// same object.
+    Computed { relation: String },
+    /// `<sce:through relation then>`: the subjects of the relation `then` of each
+    /// object the tuples of `relation` on this object name.
+    Through { relation: String, then: String },
+    /// `<sce:all>`: the subjects every one of its terms derives.
+    All(RelationRewrite),
+}
+
+/// A set of principals a tuple's subject may name, `object#relation`: the
+/// subjects of `relation` of an object of the type `object`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct SubjectSet {
+    pub object: String,
+    pub relation: String,
 }
 
 // ── Union kind ─────────────────────────────────────────────────
@@ -8724,7 +9162,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            31,
+            32,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

@@ -502,7 +502,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-thirty-one variants of `ForgeKind`, written in the `sce:kind` attribute
+thirty-two variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -517,7 +517,7 @@ queue        feature-model            broadcast-log
 text-template                         union
 test-template          test-port-type test-component
 test-configuration     test-case      test-suite
-properties             exploration
+properties             exploration  view
 ```
 
 `properties` and `exploration` are the documents of a formal judgement of one machine
@@ -538,6 +538,17 @@ written twice, a second `<sce:machine>`, `<sce:assume>`, `<sce:guarantee>` or
 `validation/*` codes those shapes take everywhere. What a condition may read, and which
 forms have a translation into the machine's model, are the judge's
 (`sce-codegen formal properties`).
+
+`view` is a read model (docs/adr/0151, D1). Amended by: ADR 0151 (D1, D5 and D10, step 2
+of its order of work): a view document holds at most one `<sce:viewer of>`, `person` or
+`instance`; one `<sce:table name>` per input table, of a `type` that is a `map<K, V>[B]`
+or a `set<K>[B]`, or of another `view` it imports, each saying who may read a row by one
+`<sce:visible relations relation object>` or `public="true"`; and then one `<sce:query>`
+and one `<sce:result type key bound>`, or one `<sce:relation name object>` per relation
+of a document of relations. The parser refuses a shape the document breaks alone with the
+`validation/*` codes those shapes take everywhere. Rust is the lane (D10); until its
+operators land, and on every other backend, generation refuses a valid view by name
+(`view/backend-unsupported`).
 
 The six `test-` kinds are the test profile (docs/adr/0091; their forms are
 `docs/SCE_TEST_PROFILE.md` §11). Five are declarations read by the forge parser:
@@ -11742,7 +11753,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (586 codes)
+## Appendix — `DiagnosticCode` index (587 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -12047,6 +12058,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `broadcast-log/wrap-bound-below-deploy-minimum` | Generate |
 | `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | Generate |
 | `broadcast-log/runtime-missing` | Generate |
+| `view/backend-unsupported` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

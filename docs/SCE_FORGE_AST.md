@@ -223,6 +223,7 @@ The closed enum, in declaration order:
 | `test-suite` | `TestSuiteModel` | A test suite (§11.8): the `features` alias, the `module_parameters` and the `executes` in run order, each with its `guard_us` and `requires`. |
 | `properties` | `PropertiesModel` | What one machine promises (docs/adr/0115, D15): the `machine` it is of, the `observers`, and the `assumptions` and `guarantees`, each a property with its `req`, its `form` and the conditions of that form; a declaration that emits nothing. |
 | `exploration` | `ExplorationModel` | The finite values a search of one machine is made over (docs/adr/0115, D15): the `machine`, the `outside` event names and their `most`; a declaration that emits nothing. |
+| `view` | `ViewModel` | A read model (docs/adr/0151, D1 and D5): the `viewer`, the `tables` each with its `source` (a `type` or a `view`) and its `visibility`, and the `body`, a `query` (`from`, the `steps` of each `join` and `where`, the `shape`, a `group` or a `select`, the `order` and the `result` with its `record`, `key` and `bound`) or the `relations`, each with its `rewrite` of `terms` and the `excluded` rewrite. |
 
 A `test-component` (§11.5) is a statechart and is exported through the `statechart` arm:
 its ports, timers, module parameters, statements and PTC invocations are under

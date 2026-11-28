@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- view: a read model, a query over a machine's keyed tables, kept as the
+     rows change. The distinct elapsed times of the completed jobs, slowest
+     first, at most ten of them; every reader may read every job. A job and a
+     row of the result are both the record of the event-schema example beside
+     this file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="view" name="slowest_jobs" version="1.0">
+  <sce:import kind="event-schema" src="event-schema.scxml" as="JobCompleted"/>
+  <sce:table name="jobs" type="map&lt;uint64, record:JobCompleted&gt;[jobs_max=1000]" public="true"/>
+  <sce:query>
+    <sce:from table="jobs" as="j"/>
+    <sce:group by="j.row.elapsed_ms">
+      <sce:field name="elapsed_ms" expr="j.row.elapsed_ms"/>
+    </sce:group>
+    <sce:order by="elapsed_ms desc"/>
+  </sce:query>
+  <sce:result type="record:JobCompleted" key="elapsed_ms" bound="slowest=10"/>
+</scxml>

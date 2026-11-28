@@ -632,6 +632,71 @@ impl Names<'_> {
                 }
                 Ok(())
             }
+            // A view names the records of its tables, of its result and of its
+            // nests, the views it reads by a table and by a relation, and what
+            // its expressions read (docs/adr/0151, D1).
+            ForgeDocument::View(m) => {
+                use crate::forge::model::{
+                    ViewBody, ViewGroupOutput, ViewShape, ViewStep, ViewTableSource, ViewVisibility,
+                };
+                for table in &m.tables {
+                    match &table.source {
+                        ViewTableSource::Type(ty) => self.value_type_aliases(ty),
+                        ViewTableSource::View(alias) => self.name(alias),
+                    }
+                    if let Some(ViewVisibility::Relation {
+                        relations, object, ..
+                    }) = &table.visibility
+                    {
+                        self.name(relations);
+                        self.expr(object, None)?;
+                    }
+                }
+                let ViewBody::Query(query) = &m.body else {
+                    return Ok(());
+                };
+                self.name(&query.result.record);
+                for step in &query.steps {
+                    match step {
+                        ViewStep::Join(join) => self.expr(&join.on, None)?,
+                        ViewStep::Where(filter) => self.expr(&filter.cond, None)?,
+                    }
+                }
+                match &query.shape {
+                    ViewShape::Group(group) => {
+                        for by in &group.by {
+                            self.expr(by, None)?;
+                        }
+                        for output in &group.outputs {
+                            match output {
+                                ViewGroupOutput::Field(field)
+                                | ViewGroupOutput::Sum(field)
+                                | ViewGroupOutput::Min(field)
+                                | ViewGroupOutput::Max(field) => self.expr(&field.expr, None)?,
+                                ViewGroupOutput::Count { .. } => {}
+                                ViewGroupOutput::Nest(nest) => {
+                                    self.value_type_aliases(&nest.ty);
+                                    for field in &nest.fields {
+                                        self.expr(&field.expr, None)?;
+                                    }
+                                    for key in &nest.order {
+                                        self.expr(&key.expr, None)?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ViewShape::Select(select) => {
+                        for field in &select.fields {
+                            self.expr(&field.expr, None)?;
+                        }
+                    }
+                }
+                for key in &query.order {
+                    self.expr(&key.expr, None)?;
+                }
+                Ok(())
+            }
             // A timer names events, a buffer pool sizes storage, an enum
             // lists values and a feature model lists features: none of them
             // reads another document. The documents of a formal judgement name

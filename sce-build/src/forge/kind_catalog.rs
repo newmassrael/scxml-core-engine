@@ -1078,6 +1078,51 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             example: Example::Document(include_str!("../../kind-examples/exploration.scxml")),
         },
+        K::View => KindGuide {
+            role: KindRole::Computation,
+            summary:
+                "A read model: a relational query over a machine's bounded keyed tables (from, \
+                      join, where, group, select, order), read into a typed plan before it runs, \
+                      its key and its total order inferred, its value maintained by each change \
+                      and computed for a viewer only from the rows the viewer may read; or a \
+                      document of the relations who may read a row is derived by.",
+            choose_when: &[
+                "the text asks for a list a screen or a client shows, joined across tables, \
+                 grouped, counted and ordered, kept up to date as the rows change",
+                "what one reader sees is a selection of the rows by who the reader is: a \
+                 member of a project, an owner, a person a group holds",
+                "the answer must not grow in cost with the number of rows when one row changes",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Algorithm,
+                    "an algorithm walks tables by hand and computes its answer whole on each \
+                     call; a view states the query, so its plan, its key, its order and the rows \
+                     it reads are known to the build, and it is maintained by each change",
+                ),
+                apart!(
+                    K::BoundedCollection,
+                    "a bounded collection is a slot table addressed by handles; a view reads \
+                     tables by key, as relations",
+                ),
+            ],
+            notes: &[
+                "at most one <sce:viewer of=\"person|instance\">; one <sce:table name type|view> \
+                 per table, each with one <sce:visible relations relation object> or \
+                 public=\"true\"",
+                "one <sce:query>: <sce:from table as>, then <sce:join table as on kind> and \
+                 <sce:where cond> in order, then one <sce:group by> (field, count, sum, min, \
+                 max, nest) or <sce:select>, then at most one <sce:order by>; and one \
+                 <sce:result type key bound>",
+                "a document of relations holds one set of relation tuples and one \
+                 <sce:relation name object> per relation, its children <sce:direct subjects>, \
+                 <sce:computed relation>, <sce:through relation then>, <sce:all> and \
+                 <sce:but-not>",
+                "no backend lowers a view yet: Rust is its lane, and every other backend \
+                 refuses it by name (view/backend-unsupported)",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/view.scxml")),
+        },
     }
 }
 

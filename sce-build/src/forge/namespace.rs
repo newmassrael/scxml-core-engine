@@ -244,6 +244,10 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         // judge's own scope, not this one (docs/adr/0115, D15).
         | ForgeDocument::Properties(_)
         | ForgeDocument::Exploration(_)
+        // A view's tables, aliases and columns are named by its own elements
+        // and held unique by the view parser; its expressions read them in the
+        // scope its plan builds (docs/adr/0151, D1).
+        | ForgeDocument::View(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

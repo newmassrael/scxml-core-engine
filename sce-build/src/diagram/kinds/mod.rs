@@ -95,6 +95,9 @@ pub fn pictures(
         // The properties of a machine and an exploration of it are lists read
         // by the formal judge; the pseudocode page carries them.
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => Ok(Vec::new()),
+        // A view is a query of operators, or rules of relations; the
+        // pseudocode page carries it (docs/adr/0151, D1).
+        ForgeDocument::View(_) => Ok(Vec::new()),
         // A broadcast log has no picture of its own yet, as a queue has none:
         // the pseudocode page and the field table carry it.
         ForgeDocument::BroadcastLog(_) => Ok(Vec::new()),

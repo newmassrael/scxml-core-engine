@@ -466,6 +466,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::TestSuite(m) => &m.name,
         ForgeDocument::Properties(m) => &m.name,
         ForgeDocument::Exploration(m) => &m.name,
+        ForgeDocument::View(m) => &m.name,
     }
 }
 

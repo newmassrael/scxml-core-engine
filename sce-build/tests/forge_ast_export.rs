@@ -428,6 +428,10 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // events from outside.
     ("properties", "properties_ast_export_min.scxml"),
     ("exploration", "exploration_ast_export_min.scxml"),
+    // docs/adr/0151, D1: a view with a viewer, a filtered, a public and a
+    // view table, a join of each kind, a where, a group of every column and an
+    // order.
+    ("view", "view_ast_export_min.scxml"),
 ];
 
 #[test]

@@ -10661,7 +10661,10 @@ fn discover_stateful_member_methods(
         // The documents of a formal judgement emit nothing, so nothing is
         // called on them (docs/adr/0115, D15).
         | ForgeDocument::Properties(_)
-        | ForgeDocument::Exploration(_) => Vec::new(),
+        | ForgeDocument::Exploration(_)
+        // A view's value is read where a machine holds it (docs/adr/0151,
+        // D9); nothing is called on its alias.
+        | ForgeDocument::View(_) => Vec::new(),
     }
 }
 

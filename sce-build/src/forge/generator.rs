@@ -2585,6 +2585,13 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(
+                crate::forge::view::backend_unsupported(m, crate::generator::Language::Cpp).into(),
+            )
+        }
         // docs/adr/0092, section 7, the C++ row: a union is a struct of one
         // `std::variant`, an alternative per case. A backend not in
         // `codegen_matrix::UNION_BACKENDS` refuses its document by name in its
@@ -30473,6 +30480,15 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(crate::forge::view::backend_unsupported(
+                m,
+                crate::generator::Language::Kotlin,
+            )
+            .into())
+        }
         // docs/adr/0092, section 7: Kotlin lowers a union to a sealed
         // interface, one case per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_kotlin(&env, m, imports, options)?,
@@ -30730,6 +30746,15 @@ pub fn generate_rust_with_imports_and_externs(
         // (`KindClass::Declaration`).
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
+        }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(crate::forge::view::backend_unsupported(
+                m,
+                crate::generator::Language::Rust,
+            )
+            .into())
         }
         // docs/adr/0092, section 7: Rust lowers a union to an enum, one
         // variant per variant of its tag's enum.
@@ -35315,6 +35340,13 @@ pub fn generate_go_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(
+                crate::forge::view::backend_unsupported(m, crate::generator::Language::Go).into(),
+            )
+        }
         // docs/adr/0092, section 7, the Go row: a union is a value struct of
         // its tag and one member per case that holds a record.
         ForgeDocument::Union(m) => render_union_go(&env, m, imports, options)?,
@@ -35624,6 +35656,15 @@ pub fn generate_python_with_imports(
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
         }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(crate::forge::view::backend_unsupported(
+                m,
+                crate::generator::Language::Python,
+            )
+            .into())
+        }
         // docs/adr/0092, section 7, the Python row: a union is a class and one
         // frozen dataclass per case derived from it.
         ForgeDocument::Union(m) => render_union_python(&env, m, imports, options)?,
@@ -35902,6 +35943,11 @@ pub fn generate_swift_with_imports(
         ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => None,
+        // docs/adr/0151, D10: a view is refused by name on every backend but its
+        // lane.
+        ForgeDocument::View(m) => {
+            return Err(crate::forge::view::backend_unsupported(m, Language::Swift).into())
+        }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -36939,6 +36985,13 @@ pub fn generate_c11_with_imports_and_externs(
         // (`KindClass::Declaration`).
         ForgeDocument::Properties(_) | ForgeDocument::Exploration(_) => {
             return Ok(GeneratedOutput::default())
+        }
+        // docs/adr/0151, D10: a view is read and checked into its plan, and
+        // refused by name on a backend not in `codegen_matrix::VIEW_BACKENDS`.
+        ForgeDocument::View(m) => {
+            return Err(
+                crate::forge::view::backend_unsupported(m, crate::generator::Language::C11).into(),
+            )
         }
         // docs/adr/0092, section 7, the C11 row: a union is a struct of its tag
         // and a C `union` of its cases' records.
@@ -49530,7 +49583,10 @@ impl StatelessFunction {
             | ForgeDocument::TestPortType(_)
             | ForgeDocument::TestConfiguration(_)
             | ForgeDocument::TestCase(_)
-            | ForgeDocument::TestSuite(_) => None,
+            | ForgeDocument::TestSuite(_)
+            // A view's value is held by the machine that declares it
+            // (docs/adr/0151, D9), never called.
+            | ForgeDocument::View(_) => None,
         }
     }
 

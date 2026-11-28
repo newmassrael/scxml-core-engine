@@ -345,6 +345,10 @@ use crate::forge::model::{
 use crate::forge::model::{ExplorationModel, PropertiesModel, Property, PropertyForm};
 use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
 use crate::forge::model::{
+    RelationRewrite, RewriteTerm, ViewBody, ViewGroupOutput, ViewJoinKind, ViewModel, ViewOrderKey,
+    ViewOutputField, ViewQuery, ViewShape, ViewStep, ViewTableSource, ViewVisibility,
+};
+use crate::forge::model::{
     TestCaseModel, TestConfigurationModel, TestMatcher, TestMatcherForm, TestPortTypeModel,
     TestSuiteModel, TestTemplateModel, TestValue,
 };
@@ -583,6 +587,7 @@ pub fn render_nodes(
         ForgeDocument::TestSuite(m) => Ok(render_test_suite(m)),
         ForgeDocument::Properties(m) => Ok(render_properties(m)),
         ForgeDocument::Exploration(m) => Ok(render_exploration(m)),
+        ForgeDocument::View(m) => Ok(render_view(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -2300,6 +2305,182 @@ fn render_exploration(m: &ExplorationModel) -> Vec<Node> {
         });
     });
     out.nodes
+}
+
+// ── View ───────────────────────────────────────────────────────
+
+/// A view (docs/adr/0151, D1 and D5): its viewer, each table with who may
+/// read a row, then its query, one line per operator in the order written,
+/// and its result; or each relation and its rewrite.
+fn render_view(m: &ViewModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!("view {}", text(&m.name)));
+    out.nested(|out| {
+        if let Some(viewer) = &m.viewer {
+            out.line(&format!("viewer {}", viewer.of.as_attr()));
+        }
+        for table in &m.tables {
+            let source = match &table.source {
+                ViewTableSource::Type(ty) => format!("type {}", text(&ty.to_string())),
+                ViewTableSource::View(alias) => format!("view {}", text(alias)),
+            };
+            out.line(&format!("table {} {source}", text(&table.name)));
+            out.nested(|out| match &table.visibility {
+                Some(ViewVisibility::Public) => out.line("public"),
+                Some(ViewVisibility::Relation {
+                    relations,
+                    relation,
+                    object,
+                }) => out.line(&format!(
+                    "visible {} {} object {}",
+                    text(relations),
+                    text(relation),
+                    text(object)
+                )),
+                None => {}
+            });
+        }
+        match &m.body {
+            ViewBody::Query(query) => render_view_query(out, query),
+            ViewBody::Relations { relations } => {
+                for relation in relations {
+                    out.line(&format!(
+                        "relation {}#{}",
+                        text(&relation.object),
+                        text(&relation.name)
+                    ));
+                    out.nested(|out| render_rewrite(out, &relation.rewrite));
+                }
+            }
+        }
+    });
+    out.nodes
+}
+
+/// The operators of a query, each a line, and its result.
+fn render_view_query(out: &mut Out<'_>, query: &ViewQuery) {
+    out.line(&format!(
+        "from {} as {}",
+        text(&query.from.table),
+        text(&query.from.alias)
+    ));
+    for step in &query.steps {
+        match step {
+            ViewStep::Join(join) => {
+                let kind = match join.kind {
+                    ViewJoinKind::Inner => "join",
+                    ViewJoinKind::Left => "left join",
+                };
+                out.line(&format!(
+                    "{kind} {} as {} on {}",
+                    text(&join.table),
+                    text(&join.alias),
+                    text(&join.on)
+                ));
+            }
+            ViewStep::Where(filter) => out.line(&format!("where {}", text(&filter.cond))),
+        }
+    }
+    let field = |out: &mut Out<'_>, word: &str, field: &ViewOutputField| {
+        out.line(&format!(
+            "{word} {} {}",
+            text(&field.name),
+            text(&field.expr)
+        ));
+    };
+    match &query.shape {
+        ViewShape::Group(group) => {
+            out.line(&format!("group by {}", text(&group.by.join(", "))));
+            out.nested(|out| {
+                for output in &group.outputs {
+                    match output {
+                        ViewGroupOutput::Field(f) => field(out, "field", f),
+                        ViewGroupOutput::Count { name, .. } => {
+                            out.line(&format!("count {}", text(name)))
+                        }
+                        ViewGroupOutput::Sum(f) => field(out, "sum", f),
+                        ViewGroupOutput::Min(f) => field(out, "min", f),
+                        ViewGroupOutput::Max(f) => field(out, "max", f),
+                        ViewGroupOutput::Nest(nest) => {
+                            out.line(&format!(
+                                "nest {} {}",
+                                text(&nest.name),
+                                text(&nest.ty.to_string())
+                            ));
+                            out.nested(|out| {
+                                if !nest.order.is_empty() {
+                                    out.line(&format!("order {}", text(&order_keys(&nest.order))));
+                                }
+                                for f in &nest.fields {
+                                    field(out, "field", f);
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+        }
+        ViewShape::Select(select) => {
+            out.line("select");
+            out.nested(|out| {
+                for f in &select.fields {
+                    field(out, "field", f);
+                }
+            });
+        }
+    }
+    if !query.order.is_empty() {
+        out.line(&format!("order {}", text(&order_keys(&query.order))));
+    }
+    out.line(&format!(
+        "result record:{} key {} bound {}",
+        text(&query.result.record),
+        text(&query.result.key.join(", ")),
+        query.result.bound
+    ));
+}
+
+/// An order's keys as the document writes them.
+fn order_keys(keys: &[ViewOrderKey]) -> String {
+    keys.iter()
+        .map(|key| {
+            if key.descending {
+                format!("{} desc", key.expr)
+            } else {
+                key.expr.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A rewrite of a relation: one line per term, an intersection and an
+/// exclusion nested under their own lines.
+fn render_rewrite(out: &mut Out<'_>, rewrite: &RelationRewrite) {
+    for term in &rewrite.terms {
+        match term {
+            RewriteTerm::Direct { subjects } if subjects.is_empty() => out.line("direct"),
+            RewriteTerm::Direct { subjects } => {
+                let sets: Vec<String> = subjects
+                    .iter()
+                    .map(|s| format!("{}#{}", s.object, s.relation))
+                    .collect();
+                out.line(&format!("direct subjects {}", text(&sets.join(" "))));
+            }
+            RewriteTerm::Computed { relation } => out.line(&format!("computed {}", text(relation))),
+            RewriteTerm::Through { relation, then } => {
+                out.line(&format!("through {} then {}", text(relation), text(then)))
+            }
+            RewriteTerm::All(inner) => {
+                out.line("all");
+                out.nested(|out| render_rewrite(out, inner));
+            }
+        }
+    }
+    if let Some(excluded) = &rewrite.excluded {
+        out.line("but-not");
+        out.nested(|out| render_rewrite(out, excluded));
+    }
 }
 
 // ── Text template ──────────────────────────────────────────────

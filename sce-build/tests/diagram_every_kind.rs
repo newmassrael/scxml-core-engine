@@ -77,6 +77,10 @@ const PICTURES: &[(&str, &[&str])] = &[
     // where each case is a line.
     ("union", &[]),
     ("validator", &["dataflow.svg"]),
+    // A view is a query of operators, or the rules of relations; its reading
+    // is the pseudocode page, where each operator is a line (docs/adr/0151,
+    // D1).
+    ("view", &[]),
     ("worker", &["structure.svg"]),
 ];
 

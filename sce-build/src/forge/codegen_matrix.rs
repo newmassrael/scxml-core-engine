@@ -154,6 +154,11 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // docs/adr/0115, D15: the properties of a machine and the values a
         // search of it is made over are read by `sce-codegen formal`.
         ForgeKind::Properties | ForgeKind::Exploration => KindClass::Declaration,
+        // docs/adr/0151, D10: a view is read and checked into its plan on
+        // every backend, and lowered by the lane of [`VIEW_BACKENDS`]; every
+        // other backend refuses it by name ([`awaits_runtime`]), not as a
+        // missing template.
+        ForgeKind::View => KindClass::Generic,
     }
 }
 
@@ -392,8 +397,22 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
         | ForgeKind::TestSuite => lists(TEST_SUITE_BACKENDS, lang),
+        // docs/adr/0151, D10: the circuit a view's plan prints, over the
+        // operators of the forge runtime, ships on the backends of
+        // [`VIEW_BACKENDS`], the one list both this answer and
+        // [`awaits_runtime`] read.
+        ForgeKind::View => lists(VIEW_BACKENDS, lang),
     }
 }
+
+/// The backends that lower a view (docs/adr/0151, D10): Rust, native and on
+/// `wasm32-unknown-unknown`, is the lane, and joins this list in the change
+/// that gives it the operators of its forge runtime (`sce_forge_runtime::view`),
+/// the template of the circuit and the dispatch arm that renders it, and in no
+/// other change, for the reason [`BROADCAST_LOG_BACKENDS`] gives. No other
+/// backend joins it: each, and the Interpreter, refuses a view by name
+/// (`view/backend-unsupported`, [`crate::forge::view::backend_unsupported`]).
+pub const VIEW_BACKENDS: &[Language] = &[];
 
 /// The backends that generate a union (docs/adr/0092, section 7): the unit of a
 /// union document, its sum type, and a field of an event schema's unit that
@@ -694,6 +713,10 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
         | ForgeKind::TestSuite) => !template_ships(kind, lang),
+        // docs/adr/0151, D10: a view document is read and checked into its
+        // plan on every backend, and a backend that does not lower one refuses
+        // it by name in its dispatch (`view/backend-unsupported`).
+        ForgeKind::View => !lists(VIEW_BACKENDS, lang),
         _ => false,
     }
 }
@@ -1324,8 +1347,10 @@ mod tests {
             for &lang in Language::ALL {
                 if awaits_runtime(kind, lang) {
                     assert!(
-                        matches!(kind, ForgeKind::BroadcastLog | ForgeKind::Union)
-                            || kind.is_test_profile(),
+                        matches!(
+                            kind,
+                            ForgeKind::BroadcastLog | ForgeKind::Union | ForgeKind::View
+                        ) || kind.is_test_profile(),
                         "{kind:?} on {lang:?}"
                     );
                     assert!(!template_ships(kind, lang), "{kind:?} on {lang:?}");
@@ -1464,6 +1489,32 @@ mod tests {
                 .filter(|lang| sweeps(*lang))
                 .collect::<Vec<_>>(),
             emitting(ForgeKind::Statechart).collect::<Vec<_>>()
+        );
+    }
+
+    /// docs/adr/0151, D10: a view is read and checked on every backend and
+    /// lowered by none until its lane lands, so every backend lets it through
+    /// the matrix to the dispatch that refuses it by name, and none emits it.
+    #[test]
+    fn a_view_is_refused_by_name_on_every_backend_until_its_lane_lands() {
+        assert_eq!(kind_class(ForgeKind::View), KindClass::Generic);
+        for &lang in Language::ALL {
+            let landed = VIEW_BACKENDS.contains(&lang);
+            assert_eq!(
+                lookup(ForgeKind::View, lang),
+                if landed {
+                    EmitOutcome::Emit
+                } else {
+                    EmitOutcome::RuntimeMissing
+                },
+                "{lang:?}"
+            );
+            assert!(check(ForgeKind::View, lang).is_ok(), "{lang:?}");
+            assert!(!ships_in_part(ForgeKind::View, lang), "{lang:?}");
+        }
+        assert!(
+            VIEW_BACKENDS.iter().all(|lang| *lang == Language::Rust),
+            "a view is lowered by the Rust lane alone (docs/adr/0151, D10)"
         );
     }
 

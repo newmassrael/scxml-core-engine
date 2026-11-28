@@ -1830,6 +1830,13 @@ pub enum DiagnosticCode {
     #[serde(rename = "broadcast-log/runtime-missing")]
     BroadcastLogRuntimeMissing,
 
+    // ── The view kind (docs/adr/0151). The refusal of a backend that does
+    //    not lower a view; the document is valid as written. ──
+    /// A valid view document for a backend that does not lower a view
+    /// (docs/adr/0151, D10). `actual` is absent: the language is the target.
+    #[serde(rename = "view/backend-unsupported")]
+    ViewBackendUnsupported,
+
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
@@ -4462,6 +4469,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         BroadcastLogWrapBoundBelowDeployMinimum,
         BroadcastLogSlotsNotADivisorOfTheStampSpace,
         BroadcastLogRuntimeMissing,
+        // The view kind (docs/adr/0151, D10)
+        ViewBackendUnsupported,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -4998,6 +5007,8 @@ impl DiagnosticCode {
         match self {
             // ── Formal judges (docs/adr/0146) ───────────────────
             FormalDeclaration | FormalVerdict | FormalToolUnavailable => Some("ADR 0146 D1"),
+            // ── The view kind (docs/adr/0151) ───────────────────
+            ViewBackendUnsupported => Some("ADR 0151 D10"),
             FormalNoTranslation => Some("ADR 0115 D7"),
             FormalIsolation => Some("ADR 0115 D11"),
             FormalPropertyRefused => Some("ADR 0115 D15"),
@@ -6615,6 +6626,7 @@ impl DiagnosticCode {
             | ValidationMigrationNotTotal
             | ValidationMigrationTypeChange
             | ValidationMigrationShapeUnreadable
+            | ViewBackendUnsupported
             | ValidationMigrationChainBroken => DerivationClass::ProductOnly,
         }
     }
@@ -7034,6 +7046,7 @@ impl DiagnosticCode {
                 "broadcast-log/slots-not-a-divisor-of-the-stamp-space"
             }
             BroadcastLogRuntimeMissing => "broadcast-log/runtime-missing",
+            ViewBackendUnsupported => "view/backend-unsupported",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -13267,6 +13280,16 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![log_name.clone(), language.clone()],
         },
+        // docs/adr/0151, D10: the language is the generation target, not a
+        // token of the document, which is valid as written.
+        GenerateError::ViewBackendUnsupported { view, language } => DiagnosticPayload {
+            code: DiagnosticCode::ViewBackendUnsupported,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![view.clone(), language.clone()],
+        },
         // ── Non-MCU backend refuses `platform.c11_section_attribute`
         //    (SCE Protocol-Synthesis RFC §5.2).
         //    `actual` carries the offending backend name (`cpp` /
@@ -14929,7 +14952,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union","test-template","test-port-type","test-component","test-configuration","test-case","test-suite","properties","exploration"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union","test-template","test-port-type","test-component","test-configuration","test-case","test-suite","properties","exploration","view"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -18102,6 +18125,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:91bd428e1a9720f1","code":"broadcast-log/runtime-missing","stage":"generate","message":"broadcast-log 'event_ring': the rust forge runtime has no broadcast-log row yet. ADR 0062 §3: the kind is specified for the backends in the ADR's order, and this document is valid; it is refused rather than lowered to a log that gives less. Repair: generate for a backend whose runtime has the row, or wait for the rust row."}"#,
+            ),
+            // ── The view kind (docs/adr/0151) ──
+            (
+                "forge/view-backend-unsupported",
+                GenerateError::ViewBackendUnsupported {
+                    view: "board".into(),
+                    language: "cpp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:911ad5a5216344b9","code":"view/backend-unsupported","stage":"generate","spec":"ADR 0151 D10","message":"view 'board': the cpp backend does not lower a view: a view is lowered by the Rust lane alone, from its plan, over the operators of the Rust forge runtime, and every other backend and the Interpreter refuse it by name (docs/adr/0151, D10)"}"#,
             ),
             (
                 "forge/queue-segmented-needs-alloc",
@@ -23074,7 +23107,10 @@ mod tests {
             // both are deterministic; neither offers candidates, which
             // is what separates them from their sibling above.
             | ValidationDefaultCoversTestedVariant
-            | ValidationDefaultCoversNotAValueSpace => NeutralOrDeterministic,
+            | ValidationDefaultCoversNotAValueSpace
+            // docs/adr/0151, D10: the language is the target, and no value of
+            // the document is offered.
+            | ViewBackendUnsupported => NeutralOrDeterministic,
         }
     }
 
@@ -23805,7 +23841,8 @@ mod tests {
                 | ValidationMigrationNotTotal
                 | ValidationMigrationTypeChange
                 | ValidationMigrationShapeUnreadable
-                | ValidationMigrationChainBroken => true,
+                | ValidationMigrationChainBroken
+                | ViewBackendUnsupported => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -23817,9 +23854,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            586,
+            587,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 586 distinct variants to match the DiagnosticCode \
+             expected 587 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -24983,7 +25020,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ProfileEventStructure
             | ProfileEventPrefixOfAnother
             | ProfileEvidenceUnanchored
-            | ProfileElementUntraced => Registered(NoAnchor::NotYetMeasured),
+            | ProfileElementUntraced
+            // docs/adr/0151, D10: placed on the document, through `Located`;
+            // no scenario raises one yet.
+            | ViewBackendUnsupported => Registered(NoAnchor::NotYetMeasured),
 
             // ── Registered(CoordinateNotThreaded, RaisedBeforeAnyResolvingStage) ──
             // Measured, and each here for its OWN reason.

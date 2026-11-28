@@ -115,6 +115,9 @@
            own. -->
       <xs:enumeration value="properties"/>
       <xs:enumeration value="exploration"/>
+      <!-- docs/adr/0151, D1: a read model, a relational query over bounded
+           keyed tables, or a document of relations (D5). -->
+      <xs:enumeration value="view"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -1025,6 +1028,151 @@
         </xs:element>
       </xs:sequence>
       <xs:attribute name="most" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- docs/adr/0151, D1 and D5: a read model. A view document names its
+       viewer, its tables and who may read their rows, then one query and its
+       result, or the relations a viewer's relations are derived by. Every
+       attribute is optional and a string here, and every child is local, as
+       `field` names another element globally (a codec's field): which are
+       required, the order the operators come in and how many of each a
+       document holds are the parser's rules (`parse_view`), held once there
+       so each refusal carries its own diagnostic. -->
+  <xs:element name="viewer">
+    <xs:complexType>
+      <xs:attribute name="of" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="table">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="visible" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="relations" type="xs:string"/>
+            <xs:attribute name="relation" type="xs:string"/>
+            <xs:attribute name="object" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="name" type="xs:string"/>
+      <xs:attribute name="type" type="xs:string"/>
+      <xs:attribute name="view" type="xs:string"/>
+      <xs:attribute name="public" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A column a group or a select gives: a name and the expression it is
+       computed by. -->
+  <xs:complexType name="viewFieldType">
+    <xs:attribute name="name" type="xs:string"/>
+    <xs:attribute name="expr" type="xs:string"/>
+  </xs:complexType>
+
+  <xs:complexType name="viewFieldsType">
+    <xs:sequence>
+      <xs:element name="field" type="sce:viewFieldType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="query">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="from">
+          <xs:complexType>
+            <xs:attribute name="table" type="xs:string"/>
+            <xs:attribute name="as" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="join">
+          <xs:complexType>
+            <xs:attribute name="table" type="xs:string"/>
+            <xs:attribute name="as" type="xs:string"/>
+            <xs:attribute name="on" type="xs:string"/>
+            <xs:attribute name="kind" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="where">
+          <xs:complexType>
+            <xs:attribute name="cond" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="group">
+          <xs:complexType>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+              <xs:element name="field" type="sce:viewFieldType"/>
+              <xs:element name="count" type="sce:viewFieldType"/>
+              <xs:element name="sum" type="sce:viewFieldType"/>
+              <xs:element name="min" type="sce:viewFieldType"/>
+              <xs:element name="max" type="sce:viewFieldType"/>
+              <xs:element name="nest">
+                <xs:complexType>
+                  <xs:complexContent>
+                    <xs:extension base="sce:viewFieldsType">
+                      <xs:attribute name="name" type="xs:string"/>
+                      <xs:attribute name="type" type="xs:string"/>
+                      <xs:attribute name="order" type="xs:string"/>
+                    </xs:extension>
+                  </xs:complexContent>
+                </xs:complexType>
+              </xs:element>
+            </xs:choice>
+            <xs:attribute name="by" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="select" type="sce:viewFieldsType"/>
+        <xs:element name="order">
+          <xs:complexType>
+            <xs:attribute name="by" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="result">
+    <xs:complexType>
+      <xs:attribute name="type" type="xs:string"/>
+      <xs:attribute name="key" type="xs:string"/>
+      <xs:attribute name="bound" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- The rewrites of a relation (Zanzibar's namespace rewrites): the
+       children of a relation and of a but-not are united, those of an all
+       intersected, and a but-not takes out what its own children derive. -->
+  <xs:complexType name="viewRewriteType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="direct">
+        <xs:complexType>
+          <xs:attribute name="subjects" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="computed">
+        <xs:complexType>
+          <xs:attribute name="relation" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="through">
+        <xs:complexType>
+          <xs:attribute name="relation" type="xs:string"/>
+          <xs:attribute name="then" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="all" type="sce:viewRewriteType"/>
+      <xs:element name="but-not" type="sce:viewRewriteType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:element name="relation">
+    <xs:complexType>
+      <xs:complexContent>
+        <xs:extension base="sce:viewRewriteType">
+          <xs:attribute name="name" type="xs:string"/>
+          <xs:attribute name="object" type="xs:string"/>
+        </xs:extension>
+      </xs:complexContent>
     </xs:complexType>
   </xs:element>
 
