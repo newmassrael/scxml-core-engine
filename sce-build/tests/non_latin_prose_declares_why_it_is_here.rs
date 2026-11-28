@@ -205,6 +205,14 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          reading against them needs the sentence, which an escape would hide \
          and a paraphrase would replace with the writer's reading",
     ),
+    (
+        "docs/adr/0119-a-documents-probabilistic-model-is-generated-from-the-same-tables-a-distribution-is-given-only-to-what-the-environment-chooses-and-the-model-is-held-to-the-tla-model-and-the-code.md",
+        "quotes word for word the owner's answers that accepted the record \
+         and approved its tool, each beside an English reading: an acceptance \
+         is evidenced by the owner's own words, and a reader who checks the \
+         reading against them needs the sentence, which an escape would hide \
+         and a paraphrase would replace with the writer's reading",
+    ),
 ];
 
 // ⚠ This gate is NOT in the list above, and that is deliberate. Its own
