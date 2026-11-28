@@ -49,7 +49,6 @@
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
-use alloc::sync::Weak;
 use alloc::vec::Vec;
 use std::sync::Arc;
 
@@ -58,7 +57,7 @@ use sce_rust_session_store::{JournalEntry as StoredEntry, JournalStore, StreamNa
 
 use super::{
     checkpoint, hold, key_in, lock, Fate, Full, Input, LoadError, Pool, PoolError, Receipt,
-    SessionFactory, SharedSlot, Slot, Table,
+    SessionFactory, Table,
 };
 use crate::endpoint::{EngineCall, EngineEvent, Environment, Transport};
 use crate::peers::{FollowedEntry, Follows, KeyFrom};
@@ -109,7 +108,7 @@ impl Followed {
 }
 
 /// An entry the reader read and has not seen taken in.
-struct Open<M, T, E> {
+struct Open {
     /// The key of the session it is for.
     key: String,
     journal: String,
@@ -117,19 +116,19 @@ struct Open<M, T, E> {
     data: String,
     origin: String,
     /// Its last hand-out; `None` while it is to be handed out.
-    handed: Option<Handed<M, T, E>>,
+    handed: Option<Handed>,
 }
 
 /// The last hand-out of an open entry.
-struct Handed<M, T, E> {
+struct Handed {
     /// What tells whether the session took the entry in.
     receipt: Receipt,
-    /// The slot the entry was put in.
-    slot: Weak<Slot<M, T, E>>,
+    /// The serial of the slot the entry was put in.
+    slot: u64,
 }
 
 /// What a pool's reader of the journal holds between its calls.
-pub(super) struct Reader<M, T, E> {
+pub(super) struct Reader {
     /// Whether the mark the store keeps was read.
     started: bool,
     /// The position of the last entry read.
@@ -137,10 +136,10 @@ pub(super) struct Reader<M, T, E> {
     /// The mark the store keeps of the reader.
     kept: u64,
     /// The entries read and not yet taken in, by position.
-    open: BTreeMap<u64, Open<M, T, E>>,
+    open: BTreeMap<u64, Open>,
 }
 
-impl<M, T, E> Reader<M, T, E> {
+impl Reader {
     pub(super) fn new() -> Self {
         Self {
             started: false,
@@ -160,19 +159,19 @@ impl<M, T, E> Reader<M, T, E> {
 }
 
 /// What one call of [`Pool::follow`] decided so far.
-struct Pass<M, T, E> {
+struct Pass {
     /// The keys of the sessions it handed an entry to, which the host runs.
     run: BTreeSet<String>,
     /// The keys whose later entries wait behind one not handed now.
     held: BTreeSet<String>,
-    /// For each key with an entry out, the slot its last one went to: a later entry of the key
-    /// goes into that slot or waits.
-    out: BTreeMap<String, Weak<Slot<M, T, E>>>,
+    /// For each key with an entry out, the serial of the slot its last one went to: a later entry
+    /// of the key goes into that slot or waits.
+    out: BTreeMap<String, u64>,
     /// The pool holds its most sessions, and none can be dropped to make room.
     full: bool,
 }
 
-impl<M, T, E> Pass<M, T, E> {
+impl Pass {
     fn new() -> Self {
         Self {
             run: BTreeSet::new(),
@@ -314,7 +313,7 @@ where
     /// The entry `entry` of the journal, as the reader holds it until it is taken in: `None` for
     /// one of a journal the machine does not follow, and for one no session can be handed, which
     /// is told to the host.
-    fn opened(&self, follows: &Follows, entry: &StoredEntry) -> Option<Open<F::Machine, T, E>> {
+    fn opened(&self, follows: &Follows, entry: &StoredEntry) -> Option<Open> {
         let (journal, origin) = journal_and_origin(entry);
         if !follows.follows(journal) {
             return None;
@@ -364,12 +363,7 @@ where
     /// Hand the entry at `position` to the session of its key, unless an earlier entry of the key
     /// waits, it is out already, its key is held by another process, or there is no room: in
     /// the order of the positions of each key, as the module says.
-    fn hand(
-        &self,
-        reader: &mut Reader<F::Machine, T, E>,
-        position: u64,
-        pass: &mut Pass<F::Machine, T, E>,
-    ) {
+    fn hand(&self, reader: &mut Reader, position: u64, pass: &mut Pass) {
         let Some(open) = reader.open.get(&position) else {
             return;
         };
@@ -377,7 +371,7 @@ where
         if let Some(Handed { slot, .. }) = &open.handed {
             // Out: the key's later entries follow it into its slot, or wait until its receipt is
             // settled or lost.
-            pass.out.insert(key, Weak::clone(slot));
+            pass.out.insert(key, *slot);
             return;
         }
         if pass.held.contains(&key) {
@@ -403,15 +397,12 @@ where
             receipt: receipt.clone(),
             counted: true,
         }));
-        match self.post_followed(&key, input, pass.out.get(&key)) {
+        match self.post_followed(&key, input, pass.out.get(&key).copied()) {
             Ok(slot) => {
                 if let Some(open) = reader.open.get_mut(&position) {
-                    open.handed = Some(Handed {
-                        receipt,
-                        slot: Arc::downgrade(&slot),
-                    });
+                    open.handed = Some(Handed { receipt, slot });
                 }
-                pass.out.insert(key.clone(), Arc::downgrade(&slot));
+                pass.out.insert(key.clone(), slot);
                 pass.run.insert(key);
             }
             Err(Unhanded::Moved | Unhanded::Full(Full::Inbox)) => {
@@ -422,16 +413,13 @@ where
     }
 
     /// Put `input`, an entry of a followed journal, in the inbox of the session `key` within the
-    /// pool's bounds, making room as an envelope's post does, and answer the slot it was put in:
-    /// when `after` is given, the slot an earlier entry of the key is out in, only if the key's
-    /// session is still in it, judged under the one lock of the table the post is made under, so
-    /// that no entry of a key reaches a session before an earlier one.
-    fn post_followed(
-        &self,
-        key: &str,
-        input: Input,
-        after: Option<&Weak<Slot<F::Machine, T, E>>>,
-    ) -> Result<SharedSlot<F::Machine, T, E>, Unhanded> {
+    /// pool's bounds, making room as an envelope's post does, and answer the serial of the slot it
+    /// was put in: when `after` is given, the serial of the slot an earlier entry of the key is out
+    /// in, only if the key's session is still in that slot, judged under the one lock of the table
+    /// the post is made under, so that no entry of a key reaches a session before an earlier one.
+    /// A slot's serial is never given to another, so a session the key runs in again, in a slot
+    /// made since, is never read as the one the earlier entry went to.
+    fn post_followed(&self, key: &str, input: Input, after: Option<u64>) -> Result<u64, Unhanded> {
         let mut input = input;
         let mut room_made = false;
         loop {
@@ -440,16 +428,15 @@ where
             }
             let mut table = hold(&self.table);
             if let Some(after) = after {
-                let same = after
-                    .upgrade()
-                    .zip(table.get(key))
-                    .is_some_and(|(handed, current)| Arc::ptr_eq(&handed, current));
+                let same = table
+                    .get(key)
+                    .is_some_and(|current| current.serial == after);
                 if !same {
                     return Err(Unhanded::Moved);
                 }
             }
             match self.post_in(&mut table, key, input) {
-                Ok(slot) => return Ok(slot),
+                Ok(slot) => return Ok(slot.serial),
                 Err((back, Full::Inbox)) => return self.post_past_waiting(&table, key, back),
                 Err((back, Full::Live)) if !room_made => {
                     drop(table);
@@ -469,13 +456,14 @@ where
     /// inbox waits for the reader to pass a position (docs/adr/0116, D5): the inbox's bound does
     /// not count it, since the mark that envelope waits for may wait for it, and the session takes
     /// it past what waits. The reader's window bounds what is handed so ([`FOLLOW_WINDOW`]).
-    /// Otherwise it waits, as any entry of a full inbox does.
+    /// Otherwise it waits, as any entry of a full inbox does. Answers the serial of the slot it
+    /// was put in.
     fn post_past_waiting(
         &self,
         table: &Table<F::Machine, T, E>,
         key: &str,
         input: Input,
-    ) -> Result<SharedSlot<F::Machine, T, E>, Unhanded> {
+    ) -> Result<u64, Unhanded> {
         let Some(slot) = table.get(key) else {
             return Err(Unhanded::Full(Full::Inbox));
         };
@@ -488,7 +476,7 @@ where
             entry.counted = false;
         }
         inbox.tell(input);
-        Ok(Arc::clone(slot))
+        Ok(slot.serial)
     }
 
     /// Whether another process holds the lease on `key` now.

@@ -675,6 +675,11 @@ impl Inbox {
 /// lease, which the thread that renews leases reads too.
 struct Slot<M, T, E> {
     key: String,
+    /// What names this slot apart from every other the pool made, before or since
+    /// (`Pool::new_slot`): a removal takes the slot the table holds for the key out only when
+    /// it is this one, and the reader of the journals hands an entry of a key into the slot an
+    /// earlier one went to only while the table still holds that slot (module `follow`).
+    serial: u64,
     /// The entry the store indexes the key under ([`SessionStore::indexed`]):
     /// what its listing of dues names the session by.
     indexed: String,
@@ -684,9 +689,10 @@ struct Slot<M, T, E> {
 }
 
 impl<M, T, E> Slot<M, T, E> {
-    fn new(key: &str, indexed: String) -> Self {
+    fn new(key: &str, serial: u64, indexed: String) -> Self {
         Self {
             key: key.to_string(),
+            serial,
             indexed,
             inbox: sync::Mutex::new(Inbox::new()),
             live: sync::Mutex::new(None),
@@ -877,10 +883,12 @@ where
     stopping: sync::AtomicBool,
     /// Set once [`Pool::stop`] ended.
     stopped: sync::AtomicBool,
+    /// The serial of the last slot the pool made (`Pool::new_slot`).
+    slots_made: AtomicU64,
     /// The store the journals the machine follows are read from
     /// ([`Pool::follow_from`], docs/adr/0114, D4), and what its reader holds.
     journal: Option<Arc<dyn JournalStore>>,
-    reader: Mutex<follow::Reader<F::Machine, T, E>>,
+    reader: Mutex<follow::Reader>,
     /// The reader's mark as the store last kept it (docs/adr/0116, D5): every entry at or below it
     /// was taken in by a durable checkpoint of its session. An envelope that carries a position
     /// at or below it is taken at once; one above it waits. Only rises.
@@ -1054,6 +1062,7 @@ where
             known: Mutex::new(Known::default()),
             stopping: sync::AtomicBool::new(false),
             stopped: sync::AtomicBool::new(false),
+            slots_made: AtomicU64::new(0),
             journal: None,
             reader: Mutex::new(follow::Reader::new()),
             read_mark: AtomicU64::new(0),
@@ -1645,7 +1654,7 @@ where
             if slot::room(table.len(), self.sessions.max_live) == 0 {
                 break;
             }
-            let slot = Arc::new(Slot::new(&key, indexed));
+            let slot = self.new_slot(&key, indexed);
             hold(&slot.inbox).tell(Input::Wake);
             table.insert(key.clone(), slot);
             keys.push(key);
@@ -1988,13 +1997,23 @@ where
         }
         match slot::admission(stopping, None, live, max_live, max_inbox) {
             Ok(door) => {
-                let slot = Arc::new(Slot::new(key, self.store.indexed(key)));
+                let slot = self.new_slot(key, self.store.indexed(key));
                 hold(&slot.inbox).admitted(door, input);
                 table.insert(key.to_string(), Arc::clone(&slot));
                 Ok(slot)
             }
             Err(full) => Err((input, full)),
         }
+    }
+
+    /// A slot for the session `key`, which the store indexes as `indexed`, under a serial no
+    /// other slot of the pool is given: the count of the slots made, raised by one in a single
+    /// atomic step, so that two slots made at once never share it. It only rises, and a `u64`
+    /// does not wrap at any rate a pool makes slots, so a serial is never given again, and a slot
+    /// made for a key that left the table is never taken for the one it left.
+    fn new_slot(&self, key: &str, indexed: String) -> SharedSlot<F::Machine, T, E> {
+        let serial = self.slots_made.fetch_add(1, Ordering::SeqCst) + 1;
+        Arc::new(Slot::new(key, serial, indexed))
     }
 
     /// Save and drop the session that has gone longest without an event and
@@ -3387,11 +3406,11 @@ fn fence_of<M, T, E>(slot: &Slot<M, T, E>) -> Option<u64> {
 }
 
 /// Take `slot` out of `table`, if it is still the session the table holds for
-/// its key: a newer one for the key stays.
-fn remove_slot<M, T, E>(table: &mut Table<M, T, E>, slot: &SharedSlot<M, T, E>) {
+/// its key, the slot of its serial: a newer one for the key stays.
+fn remove_slot<M, T, E>(table: &mut Table<M, T, E>, slot: &Slot<M, T, E>) {
     if table
         .get(&slot.key)
-        .is_some_and(|current| Arc::ptr_eq(current, slot))
+        .is_some_and(|current| current.serial == slot.serial)
     {
         table.remove(&slot.key);
     }
