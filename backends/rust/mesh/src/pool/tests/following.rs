@@ -11,7 +11,7 @@ use sce_rust_session_store::{Fact, FactData, JournalStore};
 
 /// A view of the tellers: for each room, the facts it took in, in the order taken, and the origin
 /// of the first.
-struct Viewer {
+pub(super) struct Viewer {
     taken: Vec<String>,
     first_origin: String,
 }
@@ -98,7 +98,7 @@ fn viewed(state: &SavedState) -> Result<(Vec<String>, String), String> {
 
 /// The factory of viewers, counting the machines it builds.
 #[derive(Default)]
-struct Viewers {
+pub(super) struct Viewers {
     built: AtomicU64,
 }
 
