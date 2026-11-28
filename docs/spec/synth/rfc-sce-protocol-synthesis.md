@@ -928,10 +928,8 @@ through their `sce_link_runtime_<os>` crate (with `tokio_uring`
 fixed-buffer registration on linux per §5.C codegen contract).
 
 **Problem.** MCU zero-copy requires pool slots placed in specific SRAM sections aligned to DMA constraints.
-*Amended by: ADR 0111 (D4).* The pool is lent: a run-time count and length under these bounds, storage the caller
-holds, a headroom, a `SlotIndex` with `reclaim`, an `owner` or `shared` book (`<sce:sharing>`), a slot lent to events.
-The storage type decides it, as for a map (ADR 0154): a pool over storage the caller holds lends so, and the pool
-over its own storage lends every slot whole and keeps one state per slot, as before (an atomic book if `shared`).
+*Amended by: ADR 0111 (D4).* A pool over storage the caller holds is lent: a run-time count and length under these bounds,
+a headroom, a `SlotIndex` with `reclaim`, a slot lent to events; one over its own storage keeps a state per slot, its `shared` book atomic (`<sce:sharing>`), as a map's storage decides (ADR 0154).
 
 **Proposal.** New `sce:kind="buffer-pool"` and field-level placement attributes.
 

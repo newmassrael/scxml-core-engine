@@ -110,7 +110,7 @@ static int failures = 0;
 
 /* Storage a caller holds, on the documents' 16-byte alignment, large enough
  * for every span a scenario cuts and the offset it starts at. */
-static SCE_ALIGNAS(16) uint8_t arena[272];
+SCE_ALIGNAS(16) static uint8_t arena[272];
 
 #define POOL_CAT2(a, b) a##b
 #define POOL_CAT(a, b) POOL_CAT2(a, b)

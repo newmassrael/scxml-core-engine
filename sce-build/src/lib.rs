@@ -17211,7 +17211,7 @@ void sce_dcache_invalidate_by_addr(void *start, size_t len) {
 
 /* Storage the caller holds (ADR 0082): the lending pool, `rx_pool_sram1_over_t`,
  * is made over it (docs/adr/0111 D4). */
-static SCE_ALIGNAS(16) uint8_t arena[RX_POOL_SRAM1_SLOT_COUNT * RX_POOL_SRAM1_SLOT_SIZE];
+SCE_ALIGNAS(16) static uint8_t arena[RX_POOL_SRAM1_SLOT_COUNT * RX_POOL_SRAM1_SLOT_SIZE];
 
 int main(void) {
     rx_pool_sram1_over_t pool;
