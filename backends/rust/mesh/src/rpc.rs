@@ -137,6 +137,15 @@ impl Correlation {
         lost
     }
 
+    /// The wire `invoke_id` of every request still waiting on `peer`, in
+    /// wire-id order.
+    pub fn waiting_on<'a>(&'a self, peer: &'a str) -> impl Iterator<Item = [u8; 16]> + 'a {
+        self.pending
+            .iter()
+            .filter(move |(_, p)| p.target == peer)
+            .map(|(id, _)| *id)
+    }
+
     /// The envelope of every request still waiting on `peer`, in wire-id
     /// order.
     pub fn sent_to<'a>(&'a self, peer: &'a str) -> impl Iterator<Item = &'a [u8]> + 'a {

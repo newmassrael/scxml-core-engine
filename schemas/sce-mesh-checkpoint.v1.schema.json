@@ -140,6 +140,12 @@
               "properties": { "held": { "$ref": "#/definitions/count" }, "above": { "type": "array", "items": { "$ref": "#/definitions/count" } } }
             }
           ]
+        },
+        "waiting": {
+          "description": "The requests still waiting on the peer, by their wire invoke_id, in wire-id order: named only by the checkpoint of an instance of an open machine, whose restore ends each with an unknown outcome (docs/adr/0113, D4). Absent for every other router, and when none waits.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/id" }
         }
       }
     },

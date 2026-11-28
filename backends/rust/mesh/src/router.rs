@@ -39,8 +39,8 @@ use crate::causal::{
     Start, Verdict,
 };
 use crate::checkpoint::{
-    CheckpointError, Clocks, PeerState, QueuedState, ReceivedState, RouterState, UnackedState,
-    Unreleased,
+    CheckpointError, Clocks, PeerState, QueuedState, ReceivedState, RetryState, RouterState,
+    UnackedState, Unreleased,
 };
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
@@ -443,6 +443,13 @@ impl Router {
         self.instance = Some(instance.to_string());
         Ok(())
     }
+
+    /// The instance this machine speaks as, when it is an instance of an open machine
+    /// ([`Self::speak_as_instance`]).
+    pub fn instance(&self) -> Option<&str> {
+        self.instance.as_deref()
+    }
+
     /// Bind the instances of the open machine `machine` (deploy.yaml
     /// `instances: open`, docs/adr/0113): no peer is bound by its name, and an
     /// instance is bound under `config`, as `<machine>/<instance>`
@@ -788,11 +795,22 @@ impl Router {
         if let Some(persist) = self.persist.as_mut() {
             persist.under = under;
         }
+        // docs/adr/0113, D4: the checkpoint of an instance names each request waiting on a peer,
+        // which its restore ends with an unknown outcome; no other router's names any.
+        let instance = self.instance.is_some();
+        let requests = &self.requests;
         Ok(RouterState {
             peers: self
                 .peers
                 .iter()
-                .map(|(name, bound)| peer_state(name, bound, clocks))
+                .map(|(name, bound)| {
+                    let waiting = if instance {
+                        requests.waiting_on(name).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    peer_state(name, bound, waiting, clocks)
+                })
                 .collect(),
             senders: self.inbound.states(clocks),
             unreleased,
@@ -880,12 +898,35 @@ impl Router {
     /// that what it sent after the checkpoint may be lost (`restored`,
     /// SCE_MESH.md section 16.7, row 17).
     ///
-    /// The router is the one the host built from its deployment, checkpointing
-    /// and with its durable receipt declared, before anything was sent or
-    /// received through it. A refused restore leaves it in no state to use.
+    /// A router that speaks as an instance of an open machine
+    /// ([`Self::speak_as_instance`]) is restored as a recovery, which ends the
+    /// incarnation of its membership that the checkpoint's contents were said
+    /// under (docs/adr/0113, D4). Every envelope the checkpoint holds for a
+    /// peer, unreleased, waiting for the link, held for an acknowledgement or
+    /// waiting out its backoff in `retrying`, may have left once the
+    /// checkpoint was durable, under that incarnation or one taken after it,
+    /// and the server takes under the next incarnation a request it carried
+    /// before as one of its own. So none of it is sent again: each request the
+    /// checkpoint names as waiting on the peer ends as a fence ends it, as row
+    /// 20 with its `invoke_id`, each other envelope it holds is row 20 with its
+    /// `envelope_id`, and durable receipt holds none of it. A request the
+    /// checkpoint does not hold never left (a request leaves only once a
+    /// durable checkpoint holds it): the restored machine makes it, if at all,
+    /// after the restore, and it is numbered then and carried under the
+    /// incarnation the link joins next.
+    ///
+    /// The router is the one the host built from its deployment, checkpointing,
+    /// with its durable receipt declared and speaking as its instance when it
+    /// is one, before anything was sent or received through it; its link holds
+    /// no incarnation, so that it joins anew (an instance's client keeps
+    /// nothing across its process). `state` is the router's part of the latest
+    /// checkpoint the host's store holds durably, and never an earlier one: a
+    /// read of stable storage returns the last write. A refused restore leaves
+    /// the router in no state to use.
     pub(crate) fn restore(
         &mut self,
         state: &RouterState,
+        retrying: &[RetryState],
         sequence: u64,
         clean: bool,
         clocks: Clocks,
@@ -899,7 +940,17 @@ impl Router {
             durable_through: sequence,
             ..Persist::default()
         };
+        // docs/adr/0113, D4: what a router that speaks as an instance ends, by peer.
+        let instance = self.instance.is_some();
+        let mut ended: BTreeMap<String, Ended> = BTreeMap::new();
         for saved in &state.peers {
+            if !instance && !saved.waiting.is_empty() {
+                return Err(CheckpointError::Unbound(format!(
+                    "it holds the requests an instance of an open machine waited on from the \
+                     peer '{}', and this router does not speak as an instance",
+                    saved.peer
+                )));
+            }
             // docs/adr/0113, D3: an instance the checkpoint holds is bound by
             // the one lookup, under its open machine's configuration.
             self.bind(&saved.peer).map_err(|_| {
@@ -935,15 +986,13 @@ impl Router {
                 })
                 .collect::<Result<Vec<_>, CheckpointError>>()?;
             bound.next_sequence = saved.next_sequence;
-            for (envelope, at) in queued {
-                bound.outbound.requeue(envelope, at);
-            }
             match bound.durable_out.as_mut() {
                 Some(out) => {
                     out.waiting = 0;
                     out.unacked = saved
                         .unacked
                         .iter()
+                        .filter(|_| !instance)
                         .map(|held| {
                             (
                                 held.sequence,
@@ -962,6 +1011,20 @@ impl Router {
                          router does not send to it durably",
                         saved.peer
                     )))
+                }
+            }
+            if instance {
+                let held = ended.entry(saved.peer.clone()).or_default();
+                held.lost.extend(saved.waiting.iter().copied());
+                for unacked in &saved.unacked {
+                    held.hold(unacked.envelope.clone());
+                }
+                for (envelope, _) in queued {
+                    held.hold(envelope);
+                }
+            } else {
+                for (envelope, at) in queued {
+                    bound.outbound.requeue(envelope, at);
                 }
             }
             // A receiver that is no longer durable has nothing to keep of the
@@ -1007,6 +1070,13 @@ impl Router {
                     unreleased.peer
                 ))
             })?;
+            if instance {
+                ended
+                    .entry(unreleased.peer.clone())
+                    .or_default()
+                    .hold(unreleased.envelope.clone());
+                continue;
+            }
             effects.extend(release(
                 &unreleased.peer,
                 bound,
@@ -1014,6 +1084,18 @@ impl Router {
                 unreleased.sequence,
                 clocks.monotonic_ms,
             ));
+        }
+        if instance {
+            for retry in retrying {
+                ended
+                    .entry(retry.peer.clone())
+                    .or_default()
+                    .hold(retry.envelope.clone());
+            }
+            for (peer, held) in &ended {
+                let lost: Vec<[u8; 16]> = held.lost.iter().copied().collect();
+                effects.extend(unknown_outcomes(peer, &lost, &held.unknown));
+            }
         }
         Ok(effects)
     }
@@ -1566,32 +1648,7 @@ impl Router {
         let lost = self
             .requests
             .forget_left_for(peer, |request| !waits(request));
-        let raise = |invoke_id: Option<String>, envelope_id: Option<String>| Effect::Raise {
-            peer: Some(peer.to_string()),
-            signal: Signal::OutcomeUnknown {
-                invoke_id,
-                envelope_id,
-            },
-        };
-        let mut effects: Vec<Effect> = lost
-            .iter()
-            .map(|wire_id| raise(Some(rpc::uuid_text(wire_id)), None))
-            .collect();
-        for bytes in &unknown {
-            let Ok(envelope) = Envelope::decode(&mut SceCursor::new(bytes)) else {
-                continue;
-            };
-            // A request that waited is told by its own row above; one that did not was answered
-            // or cancelled before the fence, and nothing waits on it.
-            if envelope.pattern == PatternKind::RpcRequest {
-                continue;
-            }
-            effects.push(raise(
-                None,
-                Some(rpc::uuid_text(&<[u8; 16]>::from(envelope.id))),
-            ));
-        }
-        Ok(effects)
+        Ok(unknown_outcomes(peer, &lost, &unknown))
     }
 
     /// Whether `peer` is bound.
@@ -2425,8 +2482,9 @@ fn release(
 }
 
 /// What a checkpoint holds of the bound peer `name`, its moments on the wall
-/// clock `clocks` read.
-fn peer_state(name: &str, bound: &Peer, clocks: Clocks) -> PeerState {
+/// clock `clocks` read, with the wire ids of the requests `waiting` on it that
+/// it names.
+fn peer_state(name: &str, bound: &Peer, waiting: Vec<[u8; 16]>, clocks: Clocks) -> PeerState {
     PeerState {
         peer: name.to_string(),
         next_sequence: bound.next_sequence,
@@ -2455,7 +2513,59 @@ fn peer_state(name: &str, bound: &Peer, clocks: Clocks) -> PeerState {
             held: input.held,
             above: input.above.iter().copied().collect(),
         }),
+        waiting,
     }
+}
+
+/// What the restore of a router that speaks as an instance ends of one peer
+/// (docs/adr/0113, D4): the requests the checkpoint names as waiting on it, by
+/// their wire `invoke_id`, and every envelope it holds for it, each once, in
+/// the order the checkpoint holds them.
+#[derive(Default)]
+struct Ended {
+    lost: BTreeSet<[u8; 16]>,
+    unknown: Vec<Vec<u8>>,
+}
+
+impl Ended {
+    fn hold(&mut self, envelope: Vec<u8>) {
+        if !self.unknown.contains(&envelope) {
+            self.unknown.push(envelope);
+        }
+    }
+}
+
+/// What may have taken effect under an incarnation that ended, told as a
+/// fence tells it (docs/adr/0113, D4; SCE_MESH.md section 16.7 row 20): each
+/// request of `lost`, which waited on `peer`, with its `invoke_id`, then each
+/// envelope of `unknown` that is no request with its `envelope_id`. A request
+/// of `unknown` that waited is told by its own row, and one that did not was
+/// answered or cancelled before, and nothing waits on it.
+fn unknown_outcomes(peer: &str, lost: &[[u8; 16]], unknown: &[Vec<u8>]) -> Vec<Effect> {
+    let raise = |invoke_id: Option<String>, envelope_id: Option<String>| Effect::Raise {
+        peer: Some(peer.to_string()),
+        signal: Signal::OutcomeUnknown {
+            invoke_id,
+            envelope_id,
+        },
+    };
+    let mut effects: Vec<Effect> = lost
+        .iter()
+        .map(|wire_id| raise(Some(rpc::uuid_text(wire_id)), None))
+        .collect();
+    for bytes in unknown {
+        let Ok(envelope) = Envelope::decode(&mut SceCursor::new(bytes)) else {
+            continue;
+        };
+        if envelope.pattern == PatternKind::RpcRequest {
+            continue;
+        }
+        effects.push(raise(
+            None,
+            Some(rpc::uuid_text(&<[u8; 16]>::from(envelope.id))),
+        ));
+    }
+    effects
 }
 
 /// Hand written envelope `bytes` to `peer`'s send half.
@@ -4017,7 +4127,7 @@ mod tests {
 
         let mut restored = durable_open_server();
         assert_eq!(
-            restored.restore(&state, 1, false, CLOCKS),
+            restored.restore(&state, &[], 1, false, CLOCKS),
             Ok(Vec::new()),
             "an instance judged by its records holds what it sent: no restored row"
         );
@@ -4348,6 +4458,218 @@ mod tests {
         );
     }
 
+    /// `phone`, checkpointing, asking `cloud` over a binding that numbers what it sends and
+    /// dispatches what is released at once; as the instance `a1` of an open machine when
+    /// `instance`, whose server judges its requests by their numbers (docs/adr/0113, D5).
+    fn checkpointed_phone(instance: bool) -> Router {
+        let mut phone = Router::new("phone", 8, 50).unwrap();
+        if instance {
+            phone.speak_as_instance("a1").unwrap();
+        }
+        phone.add_peer(
+            "cloud",
+            PeerConfig {
+                buffer: None,
+                stamp_sequence: true,
+                responders: Responders::Named(&["cloud"]),
+                ..UNORDERED
+            },
+        );
+        phone.enable_checkpoints();
+        phone
+    }
+
+    /// Start `ask("#cloud")` under the wire invokeid `wire_id` at monotonic `now`; a
+    /// checkpointing router holds it, and nothing leaves yet.
+    fn asked_of_cloud(phone: &mut Router, wire_id: [u8; 16], id: [u8; 16], now: i64) {
+        match phone.invoke(&ask("#cloud", None), wire_id, id, now, 1000) {
+            Ok(Invoked::Started(effects)) => assert!(effects.is_empty(), "{effects:?}"),
+            other => panic!("expected the request to start, got {other:?}"),
+        }
+    }
+
+    /// The bytes of each envelope `effects` transmit, every one of them to `cloud`.
+    fn to_cloud(effects: Result<Vec<Effect>, RouterError>) -> Vec<Vec<u8>> {
+        effects
+            .unwrap()
+            .into_iter()
+            .map(|effect| match effect {
+                Effect::Transmit { peer, bytes } if peer == "cloud" => bytes,
+                other => panic!("expected only transmissions to cloud, got {other:?}"),
+            })
+            .collect()
+    }
+
+    /// SCE_MESH.md section 16.7 row 20 on the binding to `cloud`.
+    fn unknown_at_cloud(invoke_id: Option<[u8; 16]>, envelope_id: Option<[u8; 16]>) -> Effect {
+        Effect::Raise {
+            peer: Some("cloud".to_string()),
+            signal: Signal::OutcomeUnknown {
+                invoke_id: invoke_id.map(|id| rpc::uuid_text(&id)),
+                envelope_id: envelope_id.map(|id| rpc::uuid_text(&id)),
+            },
+        }
+    }
+
+    /// docs/adr/0113, D4, and docs/formal/OpenInstances.tla, `CCrash`: the restore of an
+    /// instance is a recovery, and ends what its checkpoint held as a fence ends it. The request
+    /// the checkpoint names as waiting, which left once the checkpoint was durable, is row 20
+    /// with its `invoke_id`, the other envelope it held is row 20 with its `envelope_id`, and
+    /// neither is sent again: not at the restore, not at the readiness edge of the next
+    /// incarnation, not when the next checkpoint is durable; a reply that arrives for the
+    /// request after ends nothing. A request the restored machine makes, which the checkpoint
+    /// does not hold, is numbered past the numbers the checkpoint gave and carried under the
+    /// next incarnation. Red if `restore` releases what the checkpoint of an instance held (it
+    /// is then carried under the next incarnation, where the server runs it as a request of its
+    /// own), or if `seal` does not name the request that waits (it then ends untold).
+    #[test]
+    fn a_restored_instance_ends_what_its_checkpoint_held_and_sends_none_of_it_again() {
+        let mut phone = checkpointed_phone(true);
+        assert!(phone.peer_ready("cloud", 0).unwrap().is_empty());
+        asked_of_cloud(&mut phone, WIRE, [1; 16], 10);
+        assert!(phone
+            .send(&request("#cloud", "status.changed", ""), [2; 16], 10)
+            .unwrap()
+            .is_empty());
+        let state = phone.seal(1, CLOCKS).unwrap();
+        assert_eq!(
+            state.peers[0].waiting,
+            alloc::vec![WIRE],
+            "the checkpoint names the request that waits"
+        );
+        let left = to_cloud(phone.durable(1, 20));
+        assert_eq!(
+            numbers(&[left[0].as_slice(), left[1].as_slice()]),
+            alloc::vec![Some(1), Some(2)],
+            "both left, numbered, once the checkpoint was durable"
+        );
+        drop(phone);
+
+        let mut restored = checkpointed_phone(true);
+        assert_eq!(
+            restored.restore(&state, &[], 1, false, CLOCKS),
+            Ok(alloc::vec![
+                unknown_at_cloud(Some(WIRE), None),
+                unknown_at_cloud(None, Some([2; 16])),
+            ])
+        );
+        assert!(!restored.awaits_reply(&WIRE));
+        assert!(!restored.holds_for_durability());
+        assert!(
+            restored.peer_ready("cloud", 40).unwrap().is_empty(),
+            "nothing the checkpoint held is sent under the next incarnation"
+        );
+        assert!(restored
+            .receive(
+                "cloud",
+                reply_by("cloud", 3, Some(RpcStatus::Ok), None, "1"),
+                50
+            )
+            .unwrap()
+            .is_empty());
+
+        asked_of_cloud(&mut restored, [8; 16], [4; 16], 60);
+        restored.seal(2, CLOCKS).unwrap();
+        let carried = to_cloud(restored.durable(2, 70));
+        let [carried] = carried.as_slice() else {
+            panic!("expected one transmission, got {carried:?}");
+        };
+        let envelope = Envelope::decode(&mut SceCursor::new(carried)).unwrap();
+        assert_eq!(envelope.invoke_id.map(<[u8; 16]>::from), Some([8; 16]));
+        assert_eq!(
+            envelope.sequence_no,
+            Some(3),
+            "numbered past the numbers the checkpoint gave"
+        );
+    }
+
+    /// docs/adr/0113, D4: what durable receipt held of an instance for an acknowledgement may
+    /// have left, and its restore lets it go, told as row 20, and sends none of it at the
+    /// readiness edge of the next incarnation, where a router that is no instance sends it
+    /// again; a request the checkpoint holds whose answer came before it was sealed no longer
+    /// waits, and is let go untold. Red if `restore` keeps an instance's unacknowledged
+    /// envelopes, or tells a request that was answered.
+    #[test]
+    fn a_restored_instance_lets_go_of_what_durable_receipt_held_and_tells_no_answered_request() {
+        let mut phone = checkpointed_phone(true);
+        phone.send_durably("cloud", DurableSend::default()).unwrap();
+        assert!(phone.peer_ready("cloud", 0).unwrap().is_empty());
+        asked_of_cloud(&mut phone, WIRE, [1; 16], 10);
+        phone.seal(1, CLOCKS).unwrap();
+        assert_eq!(to_cloud(phone.durable(1, 20)).len(), 1, "the request left");
+        let answered = phone
+            .receive(
+                "cloud",
+                reply_by("cloud", 3, Some(RpcStatus::Ok), None, "1"),
+                30,
+            )
+            .unwrap();
+        assert!(
+            matches!(answered.as_slice(), [Effect::Complete { .. }]),
+            "{answered:?}"
+        );
+        assert!(phone
+            .send(&request("#cloud", "status.changed", ""), [2; 16], 40)
+            .unwrap()
+            .is_empty());
+        phone.seal(2, CLOCKS).unwrap();
+        assert_eq!(to_cloud(phone.durable(2, 50)).len(), 1, "the note left");
+        let state = phone.seal(3, CLOCKS).unwrap();
+        assert_eq!(state.peers[0].unacked.len(), 2, "neither is acknowledged");
+        assert!(
+            state.peers[0].waiting.is_empty(),
+            "the request was answered"
+        );
+
+        let mut restored = checkpointed_phone(true);
+        restored
+            .send_durably("cloud", DurableSend::default())
+            .unwrap();
+        assert_eq!(
+            restored.restore(&state, &[], 3, true, CLOCKS),
+            Ok(alloc::vec![unknown_at_cloud(None, Some([2; 16]))])
+        );
+        assert!(!restored.holds_for_durability(), "held no more");
+        assert!(
+            restored.peer_ready("cloud", 60).unwrap().is_empty(),
+            "nothing is sent again at the readiness edge"
+        );
+
+        let mut closed = checkpointed_phone(false);
+        closed
+            .send_durably("cloud", DurableSend::default())
+            .unwrap();
+        assert_eq!(closed.restore(&state, &[], 3, true, CLOCKS), Ok(Vec::new()));
+        assert_eq!(
+            to_cloud(closed.peer_ready("cloud", 60)).len(),
+            2,
+            "a router that is no instance sends what it holds again, its receiver keeping its marks"
+        );
+    }
+
+    /// A checkpoint names the requests waiting on a peer only for an instance of an open
+    /// machine, and a router that does not speak as one refuses a checkpoint that names them:
+    /// it would carry again as its own what the instance's checkpoint holds. Red if `seal`
+    /// names them for every router (a closed checkpoint would change), or `restore` takes the
+    /// checkpoint of an instance into a router that is none.
+    #[test]
+    fn only_an_instance_names_its_waiting_requests_and_only_an_instance_takes_them_back() {
+        let mut closed = checkpointed_phone(false);
+        asked_of_cloud(&mut closed, WIRE, [1; 16], 10);
+        let state = closed.seal(1, CLOCKS).unwrap();
+        assert!(state.peers[0].waiting.is_empty());
+
+        let mut phone = checkpointed_phone(true);
+        asked_of_cloud(&mut phone, WIRE, [1; 16], 10);
+        let state = phone.seal(1, CLOCKS).unwrap();
+        let refused = checkpointed_phone(false).restore(&state, &[], 1, false, CLOCKS);
+        assert!(
+            matches!(&refused, Err(CheckpointError::Unbound(words))
+                if words.contains("does not speak as an instance")),
+            "{refused:?}"
+        );
+    }
+
     /// `ecu` asking `hmi` over an ordered binding (§mesh-10.6): every
     /// envelope stamped, every arrival ordered, nothing held for readiness.
     fn ordered_requester() -> Router {
@@ -4604,6 +4926,7 @@ mod tests {
                 ],
                 unacked: Vec::new(),
                 received: None,
+                waiting: Vec::new(),
             }],
             ..RouterState::default()
         };
@@ -4619,7 +4942,7 @@ mod tests {
         };
 
         let mut ahead = restored();
-        let refused = ahead.restore(&held(u64::MAX), 1, true, near);
+        let refused = ahead.restore(&held(u64::MAX), &[], 1, true, near);
         assert!(
             matches!(&refused, Err(CheckpointError::Malformed(words))
                 if words.starts_with("the envelope 1 waiting for the peer 'hmi'")),
@@ -4630,6 +4953,7 @@ mod tests {
         let mut far = restored();
         let refused = far.restore(
             &held(0),
+            &[],
             1,
             true,
             Clocks {
@@ -4645,7 +4969,10 @@ mod tests {
         assert_eq!(far.peers["hmi"].outbound.depth(), 0);
 
         let mut placed = restored();
-        assert_eq!(placed.restore(&held(9_900), 1, true, near), Ok(Vec::new()));
+        assert_eq!(
+            placed.restore(&held(9_900), &[], 1, true, near),
+            Ok(Vec::new())
+        );
         let waiting: Vec<(Vec<u8>, i64)> = placed.peers["hmi"]
             .outbound
             .queued()
