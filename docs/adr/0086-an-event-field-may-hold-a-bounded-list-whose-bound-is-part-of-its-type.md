@@ -23,6 +23,11 @@
 - Amended by: ADR 0162 (2026-11-29): section 1's grammar gains `decimal(P, S)` in `T` and `K`; section 2.1 gains its
   rows of `J` and `C`; section 3.1 its JSON spelling, the canonical text as a string; section 7.1 its Rust rows; and
   section 9's signed form holds its CBOR decimal fraction.
+- Amended by: ADR 0164 (2026-11-29), sections 1.1, 1.5, 2.1, 4 and 7: an alias that names a member of an inductive
+  document takes one bracket, its node bound and an optional depth bound (`union:U[B, depth D]`); a type that contains
+  itself within one such document is admitted with that bound, and through the imports of several stays refused; its
+  sizes are computed by dynamic programming over the node count; a reader counts nodes and refuses the one past the
+  bound (`tooManyNodes`); and every lane holds it in an arena.
 - Amends:
   - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
     grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`

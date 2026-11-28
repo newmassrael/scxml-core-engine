@@ -17,6 +17,10 @@
 - Amended by: ADR 0165 (2026-11-29, the main session under the owner's standing rule): D11 and D13, an entry of
   `docs/formal/proofs.json` names the crate root its file is read from and the specification files it includes,
   and every included file is held by D11's isolation as a proved file's contracts are.
+- Amended by: ADR 0164 (2026-11-29), D7 and D10: a document's model holds an inductive value in its canonical preorder
+  form, computes over it by folds (each structural recursion as `ApaFoldSeqLeft` over its frames) and names the node
+  bound an exploration judged it at; and an algorithm's signature may hold `<sce:measure param>`, an element apart
+  from a loop's `<sce:decreases>`.
 - Amended 2026-11-27 by the owner: Apalache is approved as D3's tool, the dependency the first question decided at
   acceptance left to the owner's approval when its step came. It is pinned by the judge with TLC and Verus (ADR 0146,
   D3). TLAPS is not approved, and D3 decides per theorem whether it would be worth its upkeep.

@@ -13,6 +13,10 @@
   keeps the generic's parameters, and adds a field whose type holds a parameter only where a reader takes its default
   without a literal
   (`docs/adr/0166-a-document-may-take-types-and-bounds-as-parameters-checked-once-under-their-classes-and-each-import-generates-the-document-its-arguments-make.md`).
+- Amended by: ADR 0164 (2026-11-29), decisions 1 and 3: a member of an inductive document declares no event, so its
+  lineage and its saved shape are named `<document name>/<member>`, its record fields carry `sce:since` up to its
+  document's revision, and a later revision adds no field that holds a member of its own document, so an older reader
+  still steps over what a newer one adds.
 - Scope: `forge::schema_revision` (the rule), `mesh::deploy::validate_event_schemas_cross_machine`
   and `mesh/event-schema-mismatch`, `forge::static_lowering::saved_shape`, the Rust and Kotlin
   templates' save and restore, `sce_rust_runtime::saved_state`, `com.sce.runtime.SavedState`,

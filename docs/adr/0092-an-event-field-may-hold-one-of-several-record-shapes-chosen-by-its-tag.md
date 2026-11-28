@@ -59,6 +59,9 @@
   is unchanged.
 - Amended by: ADR 0166 D2 (2026-11-29, accepted, not yet built): a union's case may be a type parameter of class
   `record`, or an instance of a parametric schema.
+- Amended by: ADR 0164 (2026-11-29), section 1.1 items 1 and 3: a union may be a member of an inductive document, its
+  cases' records members of the same document, and a union that holds itself through them is the recursion that record
+  admits; across documents it stays `validation/cross-kind-circular-dependency`.
 - Scope:
   - the forge model and readers: the kind `union`, the element `<sce:case>`, the type `union:<alias>`
     (`TypeOf::Union` in `sce-build/src/forge/value_type.rs`), `schemas/sce-forge-ext.xsd`,

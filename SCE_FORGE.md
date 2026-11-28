@@ -3380,6 +3380,18 @@ The request, from a downstream consumer, was read models: tables a server keeps,
 
 Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission: an `algorithm` per query, which has no plan the build can read, so neither incremental maintenance nor the viewer's noninterference can be had of it; and a flag on `bounded-collection`, whose slot table addressed by handles is not a relation. The viewer filter is part of the kind and not a second facility beside it (ADR 0151 D6), and a query written at run time is refused by the second axis.
 
+### Application: 2026-11-29 `inductive` (recursive records and unions declared together, a value a tree of bounded nodes)
+
+The request, from a downstream consumer, was recursive data: trees, nested expressions, a trie of key paths with wildcard chunks, a configuration document's value tree. The design is ADR 0164, accepted on 2026-11-29 by the main session the owner delegated the decision to, after an independent review.
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | PASS | Deterministic data layout: a value is a finite term of at most its bound of nodes, whose bytes are one deterministic CBOR form (ADR 0101), equal on every lane whatever slots hold it, and its storage is one arena of slots the build sizes from a named bound |
+| Futamura projection compatibility | PASS | The members, their fields, the bounds, the slot layout, the size of the largest value and the recursion of every function over the type are build-time; only the shape and contents of a value are runtime. A function over a tree is compiled to one loop over an explicit stack, and nothing is interpreted at run time |
+| Cross-domain reuse | PASS | Network protocols (a trie of key paths matched against patterns with wildcards, a schema language's syntax tree, a message's dissected fields), GUI and scene state (a widget tree, a scene graph without sharing), robotics control (a behaviour tree), embedded telemetry and configuration (a configuration document's value tree), build and CI systems (the expression tree of a build rule's condition), game networking (a quadtree of an area of interest) |
+
+Passed 3-of-3 axes; admitted. Four alternatives were ruled out before admission: a self reference on a codec's field (SCE Protocol-Synthesis RFC §synth-5-H's sketch), which serves self-recursion only and inside a codec only; cycles of imports between event-schema and union documents, which would make the import graph's order partial and leave a group with no owning document and no lineage; a flag on `bounded-collection`, whose slots are addressed by handles where a member's nodes are reached only through their parent; and a kind per shape (a `tree` kind, a `trie` kind), each one shape of the one construct admitted. The kind declares types and keeps no state, but it is not inline-eligible: it is declared as a document and imported, one member at a time (ADR 0164 D1).
+
 ### When admission is borderline
 
 If a candidate fails one axis but passes two, the candidate is rejected from the Forge catalog and reconsidered as either:

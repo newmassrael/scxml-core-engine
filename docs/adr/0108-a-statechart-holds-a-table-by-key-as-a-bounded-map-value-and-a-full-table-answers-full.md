@@ -22,6 +22,10 @@
   Amended by: ADR 0165 (accepted 2026-11-29), D6 items 2 and 3: a graph statement is a writer of every result it
   names, and `<sce:prune>` of its graph's two tables, so a `<foreach>` over one copies it and an `inout` argument is
   never one of them.
+  Amended by: ADR 0164 (2026-11-29), D1, D4 and D7: a bounded list whose element is a key is a key (equal by length
+  and elements, ordered as ADR 0151 D2 orders a list), a member of an inductive document is no key, a put that
+  replaces a present key may answer `full` when the value's nodes pass their bound, and a member that holds a map
+  stands in no wire position.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
