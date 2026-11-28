@@ -2,7 +2,10 @@
 
 - Status: Accepted (2026-11-28) under the owner's standing rule (the most long-term correct, textbook structure, cost
   ignored), by the main session the owner delegated the decision to, after an independent review; amended on
-  acceptance as listed in "Amended on acceptance".
+  acceptance as listed in "Amended on acceptance". Amended the same day by the owner (first landed in ca877ecb830, and
+  in the model's writing, and kept here over the review's text): D1 (a subscription to a machine that keeps one session
+  names no key), D10 (`Authorized`, `Silent` per version, `Converges` with the session's publishing, and the code held
+  to the model) ("Amended on acceptance", 14 to 16).
 - Built: nothing. Its model (D10) is to be written and checked before any code, and the table of what each part taken
   out must make TLC find is a prediction until it is.
 - Date: 2026-11-27
@@ -109,7 +112,8 @@ published variable (`sce:direction="out"`) or a view's variable (ADR 0151 D9), e
 
 A value with no `subscribable:` entry is subscribed by no one. The deployment names machines and never a client: the
 subscribers are the instances of ADR 0113, whose names the build cannot know. A subscription names the machine, the
-key of the session (as `key_from` reads it) and the value.
+key of the session (as `key_from` reads it; none for a machine that keeps one session, `key_from: none`, ADR 0114 D4)
+and the value.
 
 ### D2. A value has a generation, versions and a changelog of keyed rows
 
@@ -310,19 +314,25 @@ connection-oriented transports (patterns 4 to 6 and 9) are as they are.
 
 `docs/formal/ValueService.tla` states the promise:
 
-- `Converges`: for every version `v` of a value published while a client is subscribed to it, a client that keeps
+- `Converges`: the session publishes every version it is asked to, whatever any client does; and for every version
+  `v` of a value published while a client is subscribed to it, a client that keeps
   exchanging comes to hold the value at `v` or at a later version, or is told that the subscription ended, whatever
   the other clients do (under fairness of that client alone), as long as each reset it is given completes within
   `tombstone_retention_ms` and the value's removals within that time are at most `tombstones` (D2).
 - `Exact`: what a client holds of a value at a version is the value published at that version.
 - `Monotone`: within one generation a client's version of a value never goes back.
 - `OneState`: the values of one session a client holds whole are of one version of that session.
-- `Silent`: a client that holds a value whole is given nothing for a version whose bytes equal what it holds.
+- `Silent`: a client moves only to a version at which the value's bytes changed, so a change that leaves a viewer's
+  value as it was gives that viewer nothing. (Stated per version: a client whose cursor is before a change and before
+  the change that undoes it is owed both rows by D3, and is given bytes equal to what it held at a version that moved.)
+- `Authorized`: nothing is delivered for a subscription after its incarnation ended, nor to a viewer its audience no
+  longer admits (D9).
 
 `docs/formal/Subscriptions.tla` refines it: a server that writes versions, crashes, drops markers by their time and by
 their count and starts a changelog again; clients that subscribe, go absent, read slowly, lose their store and stop,
 each with two exchanges in flight; a network that loses, repeats, delays and reorders; and an intermediary that
-changes what is not signed. It is checked by `scripts/formal/check.sh` before any code. What each part taken out must
+changes what is not signed; and incarnations that end, taking their subscriptions. It is checked by `sce-codegen
+formal models` (ADR 0146) before any code. What each part taken out must
 make TLC find:
 
 | Taken out | What TLC must find |
@@ -341,9 +351,16 @@ make TLC find:
 | the value and its cursor in one stored write | after a client stops, a cursor past what it holds (`Exact`) |
 | delivery from the changelog (a queue per client instead, bounded) | a client that never reads stops the writer, and the others (`Converges`) |
 | nothing written for unchanged bytes | a change outside a viewer's relations delivered to it (`Silent`) |
+| the subscriptions ended with their incarnation | a change delivered to an incarnation that ended, or to a person whose delegation ended (`Authorized`) |
 
 The model is bounded: it does not cover the cost of what is owed, the pages' sizes, the cryptography of the signature,
 or the grants of the blobs a row names, which are ADR 0153's.
+
+**The code is held to the model** (ADR 0115 D2, D4 and D13). The server's due set, what a response carries, the units
+and the reset's pages are traced from the runs of the server suite and checked as behaviours of `Subscriptions.tla`;
+the client core's taking in of a unit or a page (D7) carries a Verus contract, as the `https` client core of ADR 0117
+does: within a generation its cursor never goes back, and what it holds at a version is what it was given for that
+version.
 
 ## Not in scope
 
@@ -414,8 +431,9 @@ Each step lands with a test that fails without it.
    without a reset; after a restart, each changelog's rows are the value computed from the restored tables; a client
    absent past its floor given one reset and then its changes; a value that removes keys at the rate its bounds admit
    while a client reads one page per exchange, and the client's reset completing; responses repeated and reordered
-   between a client's two exchanges, and the client holding each value exactly.
-6. The client core and the native shell (D7), and the machine's events (D6); then the browser shell, with ADR 0117
+   between a client's two exchanges, and the client holding each value exactly; and the suite's runs traced against the
+   model (D10).
+6. The client core with its contract proved, and the native shell (D7), and the machine's events (D6); then the browser shell, with ADR 0117
    step 4.
 7. The documents named in "Amends".
 
@@ -473,6 +491,13 @@ was decided by the main session as stated.
 13. The textbook structure and Sources: Almeida, Shoker and Baquero 2018 and Saito and Shapiro 2005 for D3, DBLog for
     D4 in place of ARIES, Kleppmann 2017 in place of Kreps 2013, and the sentence that the sources were not read is
     removed (review, amendment 13).
+14. D1, by the owner (2026-11-28, ADR 0114 D4 as amended): a subscription to a machine that keeps one session names no
+    key.
+15. D10, by the owner and in the writing of the model: `Authorized` and its row; `Silent` stated per version, since
+    its literal form fails under D3; `Converges` states that the session publishes, without which a queue per client
+    that stops the writer would leave it true; the judge is `sce-codegen formal models`.
+16. D10 and steps 5 and 6, by the owner: the code is held to the model by traces of the server suite and by a Verus
+    contract on the client core.
 
 ## Sources
 
