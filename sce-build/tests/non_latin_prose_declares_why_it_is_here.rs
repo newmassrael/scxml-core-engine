@@ -197,6 +197,14 @@ const THE_SCRIPT_IS_THE_SUBJECT: &[(&str, &str)] = &[
          each spelling is what the figure prints for that lexicon, and its \
          test checks the Korean word order, which an escape would hide",
     ),
+    (
+        "docs/adr/0156-a-system-is-written-as-documents-and-thin-seams-its-code-models-and-proof-obligations-are-generated-from-them-and-one-command-judges-it-under-the-assumptions-it-names.md",
+        "quotes word for word the owner's sentences that set the record's \
+         goal and accept it, each beside an English reading: an acceptance \
+         is evidenced by the owner's own words, and a reader who checks the \
+         reading against them needs the sentence, which an escape would hide \
+         and a paraphrase would replace with the writer's reading",
+    ),
 ];
 
 // ⚠ This gate is NOT in the list above, and that is deliberate. Its own
