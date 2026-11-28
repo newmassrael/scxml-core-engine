@@ -16717,6 +16717,22 @@ topology:
             diags[0].code,
         );
 
+        // Bogus <sce:lending> (docs/adr/0111 D4) — XSD-pre-empted via the
+        // poolLendingType enumeration, as the sharing is.
+        let bad_lending = bad_sharing.replace(
+            "<sce:sharing>everyone</sce:sharing>",
+            "<sce:lending>sometimes</sce:lending>",
+        );
+        let err = compile_forge_from_string(&bad_lending, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool with an unknown lending must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::XmlSchemaValidation),
+            "must be XmlSchemaValidation for an unknown lending (XSD-pre-empted); got {:?}",
+            diags[0].code,
+        );
+
         // Zero-valued slot-size — XSD-pre-empted via xs:positiveInteger
         // (excludes 0). Parser-side `if value == 0` check is the
         // schema-skipped fallback.

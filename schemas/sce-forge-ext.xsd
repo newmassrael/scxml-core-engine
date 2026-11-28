@@ -2694,6 +2694,31 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    ADR 0111 D4: what a lending of a buffer-pool names at run time.
+    `fixed` (the default, when the element is absent): every slot is lent
+    whole, the build's count of them, and named by its handle alone, so the
+    pool keeps one state per slot. `run-time`: the pool lends a run-time
+    count of slots over its own storage or the caller's, each lending names
+    its length and a headroom, and a lent slot crosses an interface by its
+    number and the generation of its lending, so the pool keeps a book.
+    A `shared` pool keeps the book whatever this says.
+  -->
+  <xs:simpleType name="poolLendingType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="fixed"/>
+      <xs:enumeration value="run-time"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="lending">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="sce:poolLendingType"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
   <!-- ═══════════════════════════════════════════════════════════════
        RFC §synth-5-M reassembly-variant buffer-pool fields (item C9)
 
