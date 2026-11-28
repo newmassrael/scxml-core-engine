@@ -242,11 +242,18 @@ import Testing
         }
     }
 
+    /// SCE_MESH.md section 10.6.4: a sequence at the `UInt64` maximum has no number after it. A fresh
+    /// stream expects its first number, so the maximum is held below that gap; once the gap has waited
+    /// out its timeout, the drain that would expect the number after the maximum overflows, and the
+    /// rule refuses. Red if the maximum is released, or if the stream expects a number past it.
     @Test func aSequenceAtTheMaximumIsRefusedByTheRule() throws {
         let inbound = Inbound(dedupWindow: 8, gapTimeoutMs: 50)
         let delivery = Delivery(dedup: false, ordered: true)
-        let refusal = inbound.admit(
-            link: "ecu", try envelopeBytes(id: 1, sequence: UInt64.max), delivery: delivery, nowMs: 0)
+        let held = try admitted(
+            inbound.admit(
+                link: "ecu", envelopeBytes(id: 1, sequence: UInt64.max), delivery: delivery, nowMs: 0))
+        #expect(held.released.isEmpty, "the maximum waits for the numbers below it")
+        let refusal = inbound.tick(nowMs: 50)
         guard case .refused(.rule) = refusal else {
             throw Unexpected(description: "expected a rule refusal, got \(refusal)")
         }
