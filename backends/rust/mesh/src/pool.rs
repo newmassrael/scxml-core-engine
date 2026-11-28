@@ -1357,11 +1357,17 @@ where
     /// deployment's `max_instances`). Its outbox ends with it, what it still owes let go as
     /// `retain_ms` lets an entry go and told to the session that sent it (SCE_MESH.md section
     /// 16.7 row 15). The keys answered are the sessions to run. The host calls this on its clock
-    /// loop's schedule, as it calls [`Self::expire`].
+    /// loop's schedule, as it calls [`Self::expire`]. A stopping pool ends no member: the store
+    /// keeps each, and its outbox, for a process that serves the sessions binding it.
     pub fn end_members(&self) -> Vec<String> {
         let Some(members) = &self.members else {
             return Vec::new();
         };
+        // Read before the store ends anything: a stopping pool tells no session, so an end it
+        // made would reach none of the sessions it saves.
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         let ended = match members.end_expired(self.wall_now(), WAKE_BATCH) {
             Ok(ended) => ended,
             Err(failure) => {
@@ -1429,15 +1435,18 @@ where
     /// Put an input made by `input` in the inbox of every session in the table whose router binds
     /// the instance `peer` (docs/adr/0113, D6), and answer their keys.
     fn tell_holders(&self, peer: &str, input: impl Fn() -> Input) -> Vec<String> {
-        if self.stopping.load(Ordering::SeqCst) {
-            return Vec::new();
-        }
         let holders: Vec<String> = lock(&self.known)
             .holders
             .get(peer)
             .map(|keys| keys.iter().cloned().collect())
             .unwrap_or_default();
         let table = hold(&self.table);
+        // A stopping pool admits no tell, as it admits no envelope. Read with the table held, as
+        // `Self::stop` sets it: a tell that found the pool running is in its session's inbox
+        // before the stop drains it, so it is applied before the session is saved.
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         let mut keys = Vec::new();
         for key in holders {
             if let Some(slot) = table.get(&key) {
@@ -6560,6 +6569,48 @@ mod tests {
         );
     }
 
+    /// docs/adr/0113, D4: a pool that stopped ends no member whose lease ran out, since it can
+    /// tell no session of the end; the store keeps the member for a process that serves the
+    /// sessions binding it. Red if `Pool::end_members` reads no stop: the store then ends the
+    /// member, and the session saved by the stop binds it with nothing left to end it.
+    #[test]
+    fn a_stopped_pool_ends_no_member() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, _wire) = open_pool(&store, &clock, &probe);
+        let a1 = joined(&store, "phone/a1", "n1", &clock);
+        pool.peer_ready("phone/a1");
+        let (key, _) = pool.receive_member(
+            "phone/a1",
+            a1,
+            Standing {
+                incarnation: a1,
+                mark: 1,
+            },
+            from_instance("a1", "r1", 1),
+        );
+        pool.run(key.as_deref().expect("placed"));
+        assert_eq!(
+            pool.stop(Instant::now() + Duration::from_secs(5)).saved,
+            ["r1"]
+        );
+        clock.advance(PHONE.members.lease_ms + 1);
+        assert!(
+            pool.end_members().is_empty(),
+            "a stopped pool told a session"
+        );
+        let ended = store
+            .end_expired(clock.at(), WAKE_BATCH)
+            .expect("the store answers");
+        assert_eq!(
+            ended
+                .iter()
+                .map(|ended| ended.member.as_str())
+                .collect::<Vec<_>>(),
+            ["phone/a1"],
+            "the stopped pool ended the member in the store"
+        );
+    }
+
     /// docs/adr/0113, D4: a pool keeps the members of the open machines its machine is bound to,
     /// so one built without a store of members is refused. Red if `Pool::observed` builds it.
     #[test]
@@ -6707,9 +6758,10 @@ mod tests {
     }
 
     /// The loom models of who holds the pool's locks, and when (docs/adr/0115, D13; the model
-    /// `SessionPool`, docs/formal/SessionPool.tla): a stop racing a post, and a stop racing the
-    /// wake of a session that came due, under every interleaving, within three preemptions, of
-    /// the locks and the flags of `sync`, which this build takes from loom. What each asserts
+    /// `SessionPool`, docs/formal/SessionPool.tla): a stop racing a post, the wake of a session
+    /// that came due, and a tell to the sessions that bind an instance, under every
+    /// interleaving, within three preemptions, of the locks, the flags and the slots' `Arc` of
+    /// `sync`, which this build takes from loom. What each asserts
     /// holds under every schedule: once `Pool::stop` returned nothing more is admitted, every
     /// input admitted before it was applied or answered once, and no session is left in memory.
     ///
@@ -6862,6 +6914,75 @@ mod tests {
                     fired + usize::from(listed),
                     1,
                     "the reminder fired {fired} times, and the store lists it: {listed}"
+                );
+            });
+        }
+
+        /// The end of phone/a1's membership, as `Pool::end_members` tells it.
+        fn a1_ended() -> Input {
+            Input::EndMember("phone/a1".to_string())
+        }
+
+        /// Whether the last durable checkpoint of the session `key` binds `peer`.
+        fn binds(store: &MemoryStore, key: &str, peer: &str) -> bool {
+            checkpoint::load(store, key)
+                .expect("read")
+                .expect("saved")
+                .checkpoint
+                .endpoints
+                .iter()
+                .any(|section| section.router.peers.iter().any(|bound| bound.peer == peer))
+        }
+
+        /// r1 binds the instance phone/a1, and a tell of the end of its membership to the
+        /// sessions that bind it (`Pool::tell_holders`, the path of `Pool::end_members`) races a
+        /// stop. Told before the stop, it is applied, by the teller's run or the stop's drain,
+        /// before the stop saves r1, whose checkpoint then binds a1 no more; refused, no key is
+        /// answered and the checkpoint binds it still. A tell made after the stop returned is
+        /// refused. Fails if a tell reads the stop before it holds the table: it then reaches
+        /// r1's inbox after the stop drained it, and the stop saves r1 without it.
+        #[test]
+        fn a_tell_racing_a_stop_is_applied_before_it_or_refused() {
+            model(|| {
+                let (store, clock, probe) =
+                    (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+                let (pool, _wire) = open_pool(&store, &clock, &probe);
+                let a1 = joined(&store, "phone/a1", "n1", &clock);
+                pool.peer_ready("phone/a1");
+                let (key, _) = pool.receive_member(
+                    "phone/a1",
+                    a1,
+                    Standing {
+                        incarnation: a1,
+                        mark: 1,
+                    },
+                    from_instance("a1", "r1", 1),
+                );
+                pool.run(key.as_deref().expect("placed"));
+                assert!(binds(&store, "r1", "phone/a1"), "r1 binds the instance");
+                let pool = loom::sync::Arc::new(pool);
+                let teller = {
+                    let pool = loom::sync::Arc::clone(&pool);
+                    thread::spawn(move || {
+                        let told = pool.tell_holders("phone/a1", a1_ended);
+                        for key in &told {
+                            pool.run(key);
+                        }
+                        told
+                    })
+                };
+                pool.stop(Instant::now() + Duration::from_secs(30));
+                assert!(
+                    pool.tell_holders("phone/a1", a1_ended).is_empty(),
+                    "a tell made after the stop returned was admitted"
+                );
+                let told = teller.join().expect("the teller");
+                assert_nothing_left(&pool, "r1");
+                let bound = binds(&store, "r1", "phone/a1");
+                assert_eq!(
+                    bound,
+                    told.is_empty(),
+                    "the tell answered {told:?}, and the saved session binds the instance: {bound}"
                 );
             });
         }

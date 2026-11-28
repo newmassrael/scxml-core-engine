@@ -7,9 +7,10 @@
 # `scripts/mutate sce-build/tests/mutations/a_session_pool_decides_its_stop_with_its_table_held_rust.cases`.
 #
 # The oracle is the loom models of `backends/rust/mesh/src/pool.rs` (module
-# `pool::tests::loom_models`), which run a stop against a post, and a stop
-# against the wake of a session that came due, under every interleaving within
-# three preemptions of the table, the slots' locks and the stop's flags. The
+# `pool::tests::loom_models`), which run a stop against a post, against the
+# wake of a session that came due, and against a tell to the sessions that bind
+# an instance, under every interleaving within three preemptions of the table,
+# the slots' `Arc` and locks and the stop's flags. The
 # property is also the model `SessionPool`'s `StoppedClean`, whose part
 # `StopHoldsTable` a run of docs/formal takes out. Each case moves one read of
 # the stop back outside the table's lock, where it was before the fix:
@@ -18,9 +19,13 @@
 #   table no longer reads it, so a post that read the pool running is admitted
 #   after the stop drained and saved its sessions;
 #   a call of `Pool::due` reads the stop only before it reads the store, so a
-#   wake named there is admitted after the stop returned.
+#   wake named there is admitted after the stop returned;
+#   a tell to the sessions that bind an instance reads the stop before it takes
+#   the table, so a tell that read the pool running reaches an inbox after the
+#   stop drained it, and the stop saves its session without it.
 #
-# Either fails a model by the session it loads after the stop returned. The
+# The first two fail a model by the session they load after the stop returned,
+# the third by the session the stop saved without what it was told. The
 # stop's own write of its flag with the table held is not a case: the drain
 # that follows takes the table, so an admit that read the flag unset is seen
 # there either way, and a case that removed that lock would read SURVIVED.
@@ -60,4 +65,26 @@ edit("backends/rust/mesh/src/pool.rs",
         for (key, indexed) in named {''',
      r'''        let mut table = hold(&self.table);
         for (key, indexed) in named {''')
+PY
+
+mutation_case "a tell reads the stop before it holds the table" <<'PY'
+edit("backends/rust/mesh/src/pool.rs",
+     r'''    fn tell_holders(&self, peer: &str, input: impl Fn() -> Input) -> Vec<String> {
+''',
+     r'''    fn tell_holders(&self, peer: &str, input: impl Fn() -> Input) -> Vec<String> {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
+''')
+edit("backends/rust/mesh/src/pool.rs",
+     r'''        let table = hold(&self.table);
+        // A stopping pool admits no tell, as it admits no envelope. Read with the table held, as
+        // `Self::stop` sets it: a tell that found the pool running is in its session's inbox
+        // before the stop drains it, so it is applied before the session is saved.
+        if self.stopping.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
+        let mut keys = Vec::new();''',
+     r'''        let table = hold(&self.table);
+        let mut keys = Vec::new();''')
 PY
