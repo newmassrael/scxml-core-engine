@@ -68,7 +68,7 @@ impl Door {
     #[cfg_attr(verus_only, verus_spec(made =>
         ensures
             made.held == 0,
-            made.envelopes == 0,
+            made.bounded == 0,
             !made.closed,
     ))]
     pub(crate) const fn open() -> Door {
@@ -94,9 +94,9 @@ impl Door {
         requires
             old(self).held < usize::MAX,
         ensures
-            taken == (old(self).envelopes < max_inbox as usize),
+            taken == (old(self).bounded < max_inbox as usize),
             taken ==> final(self).held == old(self).held + 1
-                && final(self).envelopes == old(self).envelopes + 1
+                && final(self).bounded == old(self).bounded + 1
                 && final(self).closed == old(self).closed,
             !taken ==> *final(self) == *old(self),
     ))]
@@ -118,7 +118,7 @@ impl Door {
             old(self).held < usize::MAX,
         ensures
             final(self).held == old(self).held + 1,
-            final(self).envelopes == old(self).envelopes,
+            final(self).bounded == old(self).bounded,
             final(self).closed == old(self).closed,
     ))]
     pub(crate) fn tell(&mut self) {
@@ -129,12 +129,12 @@ impl Door {
     #[cfg_attr(verus_only, verus_spec(
         requires
             old(self).held > 0,
-            envelope ==> old(self).envelopes > 0,
-            !envelope ==> old(self).envelopes < old(self).held,
+            counted ==> old(self).bounded > 0,
+            !counted ==> old(self).bounded < old(self).held,
         ensures
             final(self).held == old(self).held - 1,
-            final(self).envelopes
-                == (if envelope { old(self).envelopes - 1 } else { old(self).envelopes as int }),
+            final(self).bounded
+                == (if counted { old(self).bounded - 1 } else { old(self).bounded as int }),
             final(self).closed == old(self).closed,
     ))]
     pub(crate) fn took(&mut self, counted: bool) {
@@ -151,7 +151,7 @@ impl Door {
         ensures
             out == (old(self).closed || old(self).held == 0),
             out ==> final(self).closed && final(self).held == old(self).held
-                && final(self).envelopes == old(self).envelopes,
+                && final(self).bounded == old(self).bounded,
             !out ==> *final(self) == *old(self),
     ))]
     pub(crate) fn retire(&mut self) -> bool {
@@ -173,7 +173,7 @@ impl Door {
             given == old(self).held,
             final(self).closed,
             final(self).held == 0,
-            final(self).envelopes == 0,
+            final(self).bounded == 0,
     ))]
     pub(crate) fn close(&mut self) -> usize {
         let given = self.held;
@@ -197,18 +197,18 @@ impl Door {
     ensures
         match admitted {
             Ok(after) => !stopping && match door {
-                Some(before) => before.envelopes < max_inbox as usize
+                Some(before) => before.bounded < max_inbox as usize
                     && after.held == before.held + 1
-                    && after.envelopes == before.envelopes + 1
+                    && after.bounded == before.bounded + 1
                     && after.closed == before.closed,
                 None => live < max_live as usize && 0 < max_inbox
-                    && after.held == 1 && after.envelopes == 1 && !after.closed,
+                    && after.held == 1 && after.bounded == 1 && !after.closed,
             },
             Err(full) => match full {
                 Full::Stopping => stopping,
                 Full::Live => !stopping && door is None && live >= max_live as usize,
                 Full::Inbox => !stopping && match door {
-                    Some(before) => before.envelopes >= max_inbox as usize,
+                    Some(before) => before.bounded >= max_inbox as usize,
                     None => live < max_live as usize && max_inbox == 0,
                 },
             },
@@ -443,11 +443,11 @@ spec fn when_due(renewed_ms: u64, every_ms: u64) -> int {
     }
 }
 
-/// An inbox within the pool's bounds: no more envelopes than inputs, no more than `max_inbox` of
-/// them, and nothing in it once it is closed.
-spec fn bounded(door: Door, max_inbox: u32) -> bool {
-    &&& door.envelopes <= door.held
-    &&& door.envelopes <= max_inbox as usize
+/// An inbox within the pool's bounds: no more inputs the bound counts than inputs, no more than
+/// `max_inbox` of them, and nothing in it once it is closed.
+spec fn within_bounds(door: Door, max_inbox: u32) -> bool {
+    &&& door.bounded <= door.held
+    &&& door.bounded <= max_inbox as usize
     &&& door.closed ==> door.held == 0
 }
 
@@ -464,7 +464,7 @@ spec fn accounts(door: Door, ledger: Ledger) -> bool {
     door.held as int == ledger.posted - ledger.applied - ledger.answered
 }
 
-/// An envelope posted with the table held, as `Pool::try_post` posts it: admitted, it is counted
+/// An input the bound counts posted with the table held, as `Pool::try_post` posts it: admitted, it is counted
 /// once and the inbox stays within its bound, and a new session keeps the table within
 /// `max_live`; refused, nothing moves. A stopping pool admits nothing.
 fn an_admit_keeps_the_bounds(
@@ -473,12 +473,12 @@ fn an_admit_keeps_the_bounds(
 ) -> (answer: (Result<Door, Full>, Ghost<Ledger>))
     requires
         live <= max_live as usize,
-        door matches Some(before) ==> bounded(before, max_inbox) && !before.closed
+        door matches Some(before) ==> within_bounds(before, max_inbox) && !before.closed
             && before.held < usize::MAX && accounts(before, ledger@),
         door is None ==> ledger@ == (Ledger { posted: 0, applied: 0, answered: 0 }),
     ensures
         stopping ==> answer.0 is Err,
-        answer.0 matches Ok(after) ==> bounded(after, max_inbox) && !after.closed
+        answer.0 matches Ok(after) ==> within_bounds(after, max_inbox) && !after.closed
             && accounts(after, answer.1@) && answer.1@.posted == ledger@.posted + 1
             && answer.1@.applied == ledger@.applied && answer.1@.answered == ledger@.answered
             && (door is None ==> live + 1 <= max_live as usize),
@@ -496,17 +496,17 @@ fn an_admit_keeps_the_bounds(
 }
 
 /// An input the pool makes itself put in an inbox the table holds, as `Inbox::tell` puts it:
-/// counted once, and the bound on envelopes is as it was.
+/// counted once, and the count the bound reads is as it was.
 fn an_input_told_is_counted(
     door: &mut Door, max_inbox: Ghost<u32>, ledger: Ghost<Ledger>,
 ) -> (after: Ghost<Ledger>)
     requires
-        bounded(*old(door), max_inbox@),
+        within_bounds(*old(door), max_inbox@),
         !old(door).closed,
         old(door).held < usize::MAX,
         accounts(*old(door), ledger@),
     ensures
-        bounded(*final(door), max_inbox@),
+        within_bounds(*final(door), max_inbox@),
         !final(door).closed,
         accounts(*final(door), after@),
         after@.posted == ledger@.posted + 1,
@@ -522,24 +522,24 @@ fn an_input_told_is_counted(
 }
 
 /// The owner takes the inbox's oldest input, as `Inbox::take` takes it: it is applied once, and the
-/// inbox holds one fewer. That the oldest is an envelope or not is the queue's.
+/// inbox holds one fewer. That the oldest is one the bound counts or not is the queue's.
 fn an_input_taken_is_applied_once(
-    door: &mut Door, envelope: bool, max_inbox: Ghost<u32>, ledger: Ghost<Ledger>,
+    door: &mut Door, counted: bool, max_inbox: Ghost<u32>, ledger: Ghost<Ledger>,
 ) -> (after: Ghost<Ledger>)
     requires
-        bounded(*old(door), max_inbox@),
+        within_bounds(*old(door), max_inbox@),
         accounts(*old(door), ledger@),
         old(door).held > 0,
-        envelope ==> old(door).envelopes > 0,
-        !envelope ==> old(door).envelopes < old(door).held,
+        counted ==> old(door).bounded > 0,
+        !counted ==> old(door).bounded < old(door).held,
     ensures
-        bounded(*final(door), max_inbox@),
+        within_bounds(*final(door), max_inbox@),
         accounts(*final(door), after@),
         after@.applied == ledger@.applied + 1,
         after@.posted == ledger@.posted,
         after@.answered == ledger@.answered,
 {
-    door.took(envelope);
+    door.took(counted);
     Ghost(Ledger {
         posted: ledger@.posted,
         applied: ledger@.applied + 1,
@@ -554,10 +554,10 @@ fn a_session_leaves_by_itself_only_empty(
     door: &mut Door, max_inbox: Ghost<u32>, ledger: Ghost<Ledger>,
 ) -> (out: bool)
     requires
-        bounded(*old(door), max_inbox@),
+        within_bounds(*old(door), max_inbox@),
         accounts(*old(door), ledger@),
     ensures
-        bounded(*final(door), max_inbox@),
+        within_bounds(*final(door), max_inbox@),
         accounts(*final(door), ledger@),
         out ==> final(door).closed && final(door).held == 0
             && ledger@.posted == ledger@.applied + ledger@.answered,
@@ -572,10 +572,10 @@ fn a_session_abandoned_answers_what_it_held(
     door: &mut Door, max_inbox: Ghost<u32>, ledger: Ghost<Ledger>,
 ) -> (answer: (usize, Ghost<Ledger>))
     requires
-        bounded(*old(door), max_inbox@),
+        within_bounds(*old(door), max_inbox@),
         accounts(*old(door), ledger@),
     ensures
-        bounded(*final(door), max_inbox@),
+        within_bounds(*final(door), max_inbox@),
         final(door).closed,
         accounts(*final(door), answer.1@),
         answer.0 == old(door).held,
