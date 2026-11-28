@@ -6,7 +6,7 @@
 
 use super::journal::{fact_of, tellers, told, SAID, SAID_RECORD};
 use super::*;
-use crate::peers::{FollowedEntry, Follows};
+use crate::peers::{FollowedEntry, Follows, KeyFrom};
 use sce_rust_session_store::{Fact, FactData, JournalStore};
 
 /// A view of the tellers: for each room, the facts it took in, in the order taken, and the origin
@@ -398,4 +398,442 @@ fn an_entry_no_session_can_take_is_told_and_passed() {
         fact_of(&store.after(1, 1).expect("read").entries[0].data),
         "a"
     );
+}
+
+/// The schema of what a clerk notes.
+const NOTED: &str = "clerk.noted";
+
+/// The description of the record of [`NOTED`]: the note, a field no teller's fact has.
+const NOTED_RECORD: &str = r#"{"record":[["note",false,{"text":32},null]]}"#;
+
+/// The schema of an entry of the observed stream `directory` the ledger follows.
+const MOVED: &str = "directory.moved";
+
+/// The description of the record of [`MOVED`]: the place, a field neither a teller's fact nor a
+/// clerk's note has.
+const MOVED_RECORD: &str = r#"{"record":[["place",false,{"text":32},null]]}"#;
+
+/// A clerk: one session for the whole machine, which notes a fact for each `note` it is told, the
+/// fact the text of its data's `note`. Written by hand in the shape a generated machine has to the
+/// pool, as the rooms are.
+struct Clerk {
+    fresh: Vec<JournalEntry>,
+}
+
+impl SessionMachine for Clerk {
+    fn run(&mut self, calls: Vec<EngineCall>, _wall_now_ms: u64) -> bool {
+        let mut stepped = false;
+        for call in calls {
+            let EngineCall::Raise(event) = call else {
+                continue;
+            };
+            if event.name != "note" {
+                continue;
+            }
+            stepped = true;
+            let data = sce_rust_runtime::record_cbor::encode(&event.metadata.data, NOTED_RECORD)
+                .unwrap_or_else(|refusal| panic!("a note of its record: {refusal:?}"));
+            self.fresh.push(JournalEntry {
+                schema: NOTED,
+                revision: 1,
+                data,
+                valid_ms: None,
+                principal: event.principal.clone(),
+            });
+        }
+        stepped
+    }
+
+    fn save(&self, _wall_now_ms: u64) -> Result<SavedState, String> {
+        Ok(SavedState {
+            shape: "clerk".to_string(),
+            configuration: vec!["noting".to_string()],
+            current: "noting".to_string(),
+            variables: Vec::new(),
+            history: Vec::new(),
+            pending: Vec::new(),
+            invokes: SavedInvokes::Resumed(Vec::new()),
+            session_id: "clerk".to_string(),
+            invoke_starts: Vec::new(),
+            host_invokes: Vec::new(),
+            host_invoke_starts: Vec::new(),
+            host_invoke_token: 0,
+            auto_send_seq: 0,
+            external: Vec::new(),
+            revisions: Vec::new(),
+            features: None,
+        })
+    }
+
+    fn finished(&self) -> bool {
+        false
+    }
+
+    fn take_journal(&mut self) -> Vec<JournalEntry> {
+        core::mem::take(&mut self.fresh)
+    }
+}
+
+/// The factory of clerks.
+struct Clerks;
+
+impl SessionFactory<Wire, Clock> for Clerks {
+    type Machine = Clerk;
+
+    fn start(
+        &self,
+        _key: &str,
+        _endpoint: &SessionEndpoint<Wire, Clock>,
+        _wall_now_ms: u64,
+    ) -> Result<Clerk, String> {
+        Ok(Clerk { fresh: Vec::new() })
+    }
+
+    fn restore(
+        &self,
+        _key: &str,
+        _state: &SavedState,
+        _endpoint: &SessionEndpoint<Wire, Clock>,
+        _wall_now_ms: u64,
+    ) -> Result<Clerk, String> {
+        Ok(Clerk { fresh: Vec::new() })
+    }
+}
+
+/// How a pool that keeps one session is pooled (deploy.yaml `sessions: { key_from: none }`,
+/// docs/adr/0114, D4): no key is read, and its one key, the empty key, holds no byte.
+const ONE_SESSION: Sessions = Sessions {
+    key_from: KeyFrom::One,
+    max_key_bytes: 0,
+    ..ROOMS_SESSIONS
+};
+
+/// The clerks: one session for the whole machine, which keeps a journal.
+const CLERKS: Machine = Machine {
+    name: "clerks",
+    sessions: Some(ONE_SESSION),
+    ..ROOMS
+};
+
+/// Make the clerks of `store` note `noted`, each the number of the envelope that carries it and the
+/// note, in order: the clerks' one session holds the envelopes it took, so a number is never
+/// carried twice.
+fn note(store: &MemoryStore, clock: &Clock, noted: &[(u32, &str)]) {
+    let pool = Pool::new(
+        CLERKS,
+        PoolConfig {
+            owner: "p1".to_string(),
+            lease_ttl_ms: LEASE_TTL_MS,
+            renew_every_ms: 3_000,
+        },
+        Clerks,
+        Arc::new(store.of_machine("clerks")),
+        Wire::default(),
+        clock.clone(),
+    )
+    .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"));
+    pool.peer_ready("client");
+    for (n, text) in noted {
+        let key = pool
+            .receive(
+                "client",
+                from_client("note", &alloc::format!(r#"{{"note":"{text}"}}"#), *n, false),
+            )
+            .expect("placed in the one session");
+        assert_eq!(key, "", "the one session's key is the empty key");
+        pool.run(&key);
+    }
+    assert!(pool.take_errors().is_empty());
+}
+
+/// Make the other system say, into the observed stream `directory` under its id `origin`, that
+/// something moved to `place`.
+fn moved(store: &MemoryStore, clock: &Clock, origin: &str, place: &str) {
+    let data = sce_rust_runtime::record_cbor::encode(
+        &alloc::format!(r#"{{"place":"{place}"}}"#),
+        MOVED_RECORD,
+    )
+    .unwrap_or_else(|refusal| panic!("a move of its record: {refusal:?}"));
+    store
+        .observe(
+            "directory",
+            origin,
+            &Fact {
+                schema: MOVED,
+                revision: 1,
+                data: FactData::Bytes(&data),
+                valid_ms: None,
+                actor: None,
+                read: &[],
+            },
+            clock.at(),
+        )
+        .expect("an observed entry");
+}
+
+/// A ledger of the whole deployment: one session that takes in every entry it follows and every
+/// envelope a client sends, and keeps what it took in the order taken, each entry by its event and
+/// origin and each envelope by its event.
+struct Overview {
+    taken: Vec<String>,
+}
+
+impl SessionMachine for Overview {
+    fn run(&mut self, calls: Vec<EngineCall>, _wall_now_ms: u64) -> bool {
+        let mut stepped = false;
+        for call in calls {
+            let EngineCall::Raise(event) = call else {
+                continue;
+            };
+            if ![SAID, NOTED, MOVED, "ask"].contains(&event.name.as_str()) {
+                continue;
+            }
+            stepped = true;
+            let taken = match &event.metadata.origin {
+                Some(origin) if origin.processor == crate::pool::JOURNAL_ORIGIN_TYPE => {
+                    alloc::format!("{} {}", event.name, origin.address)
+                }
+                _ => event.name.clone(),
+            };
+            self.taken.push(taken);
+        }
+        stepped
+    }
+
+    fn save(&self, _wall_now_ms: u64) -> Result<SavedState, String> {
+        Ok(SavedState {
+            shape: "overview".to_string(),
+            configuration: vec!["overseeing".to_string()],
+            current: "overseeing".to_string(),
+            variables: vec![(
+                "taken".to_string(),
+                Value::Array(self.taken.iter().cloned().map(Value::Text).collect()),
+            )],
+            history: Vec::new(),
+            pending: Vec::new(),
+            invokes: SavedInvokes::Resumed(Vec::new()),
+            session_id: "overview".to_string(),
+            invoke_starts: Vec::new(),
+            host_invokes: Vec::new(),
+            host_invoke_starts: Vec::new(),
+            host_invoke_token: 0,
+            auto_send_seq: 0,
+            external: Vec::new(),
+            revisions: Vec::new(),
+            features: None,
+        })
+    }
+
+    fn finished(&self) -> bool {
+        false
+    }
+}
+
+/// What a saved overview took, in the order taken.
+fn overseen(state: &SavedState) -> Result<Vec<String>, String> {
+    match state.variable("taken") {
+        Ok(Value::Array(items)) => items
+            .iter()
+            .map(|item| match item {
+                Value::Text(taken) => Ok(taken.clone()),
+                other => Err(alloc::format!("a taken input that is {other:?}")),
+            })
+            .collect(),
+        other => Err(alloc::format!("what it took is {other:?}")),
+    }
+}
+
+/// The factory of overviews.
+struct Overviews;
+
+impl SessionFactory<Wire, Clock> for Overviews {
+    type Machine = Overview;
+
+    fn start(
+        &self,
+        _key: &str,
+        _endpoint: &SessionEndpoint<Wire, Clock>,
+        _wall_now_ms: u64,
+    ) -> Result<Overview, String> {
+        Ok(Overview { taken: Vec::new() })
+    }
+
+    fn restore(
+        &self,
+        _key: &str,
+        state: &SavedState,
+        _endpoint: &SessionEndpoint<Wire, Clock>,
+        _wall_now_ms: u64,
+    ) -> Result<Overview, String> {
+        Ok(Overview {
+            taken: overseen(state)?,
+        })
+    }
+}
+
+/// What the ledger follows: the tellers, the clerks and the observed stream `directory`, whose
+/// entries share no field.
+const LEDGER_FOLLOWS: Follows = Follows {
+    journals: &["tellers", "clerks", "directory"],
+    entries: &[
+        FollowedEntry {
+            event: SAID,
+            record: SAID_RECORD,
+        },
+        FollowedEntry {
+            event: NOTED,
+            record: NOTED_RECORD,
+        },
+        FollowedEntry {
+            event: MOVED,
+            record: MOVED_RECORD,
+        },
+    ],
+};
+
+/// The ledger: one session (`key_from: none`) that follows [`LEDGER_FOLLOWS`].
+const LEDGER: Machine = Machine {
+    name: "ledger",
+    sessions: Some(Sessions {
+        follows: LEDGER_FOLLOWS,
+        ..ONE_SESSION
+    }),
+    ..ROOMS
+};
+
+/// A pool of the [`LEDGER`] as the process `p1` serves it, its session kept through the ledger's
+/// handle on `store`, reading the journal of `store`.
+fn ledger(store: &MemoryStore, clock: &Clock) -> Pool<Overviews, Wire, Clock> {
+    let pool = Pool::new(
+        LEDGER,
+        PoolConfig {
+            owner: "p1".to_string(),
+            lease_ttl_ms: LEASE_TTL_MS,
+            renew_every_ms: 3_000,
+        },
+        Overviews,
+        Arc::new(store.of_machine("ledger")),
+        Wire::default(),
+        clock.clone(),
+    )
+    .unwrap_or_else(|error| panic!("a pooled machine: {error:?}"))
+    .follow_from(Arc::new(store.clone()));
+    pool.peer_ready("client");
+    pool
+}
+
+/// Follow until the ledger's reader hands nothing more, running the one session it names.
+fn follow_ledger(pool: &Pool<Overviews, Wire, Clock>) {
+    for _ in 0..64 {
+        let keys = pool.follow();
+        if keys.is_empty() {
+            return;
+        }
+        assert_eq!(
+            keys,
+            [""],
+            "the one session is the only one handed an entry"
+        );
+        pool.run("");
+    }
+    panic!("the reader never stopped handing entries");
+}
+
+/// What the durable checkpoint of the ledger's one session holds: what it took, in order, and the
+/// position it took in of each journal it follows.
+fn ledger_of(store: &MemoryStore) -> (Vec<String>, BTreeMap<String, u64>) {
+    let loaded = checkpoint::load(&store.of_machine("ledger"), "")
+        .expect("read")
+        .expect("the one session saved under the empty key");
+    (
+        overseen(&loaded.checkpoint.state).expect("an overview"),
+        loaded.checkpoint.followed,
+    )
+}
+
+/// docs/adr/0114, D4 (amended 2026-11-28): a pool that keeps one session (`key_from: none`) hands
+/// every entry of each journal and observed stream it follows to that one session, whose key is
+/// the empty key, reading no field of the entries' data (here they share none): each once, in the
+/// order of the positions, so in each journal's own order, with the origin
+/// `journal://<machine>//<position>` for an entry of another machine's one session; it keeps one
+/// position for each journal, and a pool that starts again, its mark not kept, takes nothing
+/// twice. What a client sends reaches the same session. Red if an entry is keyed by a field of its
+/// data (none of them has `room` in common, so the clerks' and the directory's would be told to
+/// the host and passed), if the empty key is refused as a key read from an envelope is, or if the
+/// one session takes an entry again after the restart.
+#[test]
+fn a_follower_that_keeps_one_session_takes_every_entry_once_in_order() {
+    let (store, clock) = (MemoryStore::new(), Clock::new());
+    say(&store, &clock, &[("r1", "a"), ("r2", "b")]);
+    note(&store, &clock, &[(1, "x")]);
+    moved(&store, &clock, "m-1", "north");
+    say(&store, &clock, &[("r3", "c")]);
+    {
+        let pool = ledger(&store, &clock);
+        for key in pool.follow() {
+            pool.run(&key);
+        }
+        assert!(pool.take_errors().is_empty());
+        // Stopped here, as a killed process stops: the mark was not kept.
+    }
+    assert_eq!(store.read_through("ledger").expect("the mark"), 0);
+    let before: Vec<String> = [
+        "teller.said journal://tellers/r1/1",
+        "teller.said journal://tellers/r2/2",
+        "clerk.noted journal://clerks//3",
+        "directory.moved journal://directory/4",
+        "teller.said journal://tellers/r3/5",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert_eq!(
+        ledger_of(&store),
+        (
+            before.clone(),
+            BTreeMap::from([
+                ("clerks".to_string(), 3),
+                ("directory".to_string(), 4),
+                ("tellers".to_string(), 5),
+            ])
+        )
+    );
+
+    note(&store, &clock, &[(2, "y")]);
+    moved(&store, &clock, "m-2", "south");
+    say(&store, &clock, &[("r4", "d")]);
+    let pool = ledger(&store, &clock);
+    follow_ledger(&pool);
+    let mut after = before;
+    after.extend(
+        [
+            "clerk.noted journal://clerks//6",
+            "directory.moved journal://directory/7",
+            "teller.said journal://tellers/r4/8",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
+    assert_eq!(
+        ledger_of(&store),
+        (
+            after.clone(),
+            BTreeMap::from([
+                ("clerks".to_string(), 6),
+                ("directory".to_string(), 7),
+                ("tellers".to_string(), 8),
+            ])
+        )
+    );
+    assert_eq!(store.read_through("ledger").expect("the mark"), 8);
+
+    // What a client sends carries no key, and reaches the one session that took the entries.
+    let key = pool
+        .receive("client", from_client("ask", r#"{"what":"all"}"#, 1, false))
+        .expect("placed in the one session");
+    assert_eq!(key, "");
+    pool.run(&key);
+    after.push("ask".to_string());
+    assert_eq!(ledger_of(&store).0, after);
+    assert!(pool.take_errors().is_empty());
 }

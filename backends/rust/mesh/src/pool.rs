@@ -5,7 +5,9 @@
 //! decision D3; SCE_MESH.md section 14.4, "Keyed session pool").
 //!
 //! deploy.yaml's `sessions:` says where the key of an envelope is read: a
-//! field of its data, or the name of the client whose link it arrived on.
+//! field of its data, or the name of the client whose link it arrived on; or
+//! that none is read, and the pool keeps one session, whose key is the empty
+//! key, which every input is for ([`KeyFrom::One`], docs/adr/0114, D4).
 //! Every key names a session of the machine of its own: a session tree with
 //! its own engine, its own Mesh [`Endpoint`] and its own inbox (docs/adr/0084).
 //! [`Pool::receive`] places an envelope in the inbox of the session its key
@@ -1867,11 +1869,12 @@ where
     /// The key `envelope`, which arrived on `peer`'s link, names, or why it
     /// names none.
     fn key_of(&self, peer: &str, envelope: &Envelope<'_>) -> Result<String, String> {
-        let key = match self.sessions.key_from {
-            KeyFrom::Client => peer.to_string(),
-            KeyFrom::Field(field) => field_key(envelope, field)?,
-        };
-        self.bounded_key(key)
+        match self.sessions.key_from {
+            KeyFrom::Client => self.bounded_key(peer.to_string()),
+            KeyFrom::Field(field) => self.bounded_key(field_key(envelope, field)?),
+            // docs/adr/0114, D4: the one session of the pool, whatever the envelope carries.
+            KeyFrom::One => Ok(String::new()),
+        }
     }
 
     /// The position of the journals the machine follows that `envelope` carries in the field
@@ -1947,8 +1950,9 @@ where
             .collect()
     }
 
-    /// `key`, or why it names no session of this pool: it is empty, or longer than a key of the
-    /// pool holds.
+    /// `key`, read from an envelope or a followed entry, or why it names no session of this pool:
+    /// it is empty, or longer than a key of the pool holds. The empty key is the one session's of
+    /// a pool that keeps one ([`KeyFrom::One`]), which no key read is taken for.
     fn bounded_key(&self, key: String) -> Result<String, String> {
         if key.is_empty() {
             return Err("its key is empty".to_string());

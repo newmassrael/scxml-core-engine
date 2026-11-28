@@ -6,10 +6,13 @@
 //!
 //! The pool reads the journal of its store ([`Pool::follow_from`]) in the order of its positions,
 //! up to the horizon, and hands each entry of a journal its machine follows ([`Follows`]) to the
-//! session the entry's key field names, as an external event of the entry's event, whose data is
-//! the entry's record read by the record the build described ([`FollowedEntry`]) and whose origin
-//! is `journal://<machine>/<key>/<position>`, or `journal://<stream>/<position>` for an observed
-//! stream. What decides that each entry takes effect once is the session's, not the reader's:
+//! session the entry's key field names, or to the one session of a pool that keeps one
+//! ([`KeyFrom::One`], whose key is the empty key), as an external event of the entry's event,
+//! whose data is the entry's record read by the record the build described ([`FollowedEntry`])
+//! and whose origin is `journal://<machine>/<key>/<position>` (the key an empty segment for the
+//! one session of a machine that keeps one, `journal://<machine>//<position>`), or
+//! `journal://<stream>/<position>` for an observed stream. What decides that each entry takes
+//! effect once is the session's, not the reader's:
 //!
 //! * A session keeps, for each journal it follows, the position of the last entry it took in, in
 //!   its checkpoint ([`Checkpoint::followed`](crate::checkpoint::Checkpoint::followed)), written
@@ -205,7 +208,9 @@ fn segment(key: &str) -> String {
     out
 }
 
-/// The journal `entry` is of, and the origin a session is told it by (D4).
+/// The journal `entry` is of, and the origin a session is told it by (D4): an entry of the one
+/// session of a machine that keeps one, whose key is the empty key, is told by
+/// `journal://<machine>//<position>`, the key an empty segment.
 fn journal_and_origin(entry: &StoredEntry) -> (&str, String) {
     match &entry.stream {
         StreamName::Session { machine, key } => (
@@ -345,6 +350,9 @@ where
         let key = match self.sessions.key_from {
             KeyFrom::Field(field) => key_in(&data, field).and_then(|key| self.bounded_key(key)),
             KeyFrom::Client => Err("the pool is keyed by its clients' names".to_string()),
+            // docs/adr/0114, D4: every entry is the one session's, whatever its data holds; the
+            // reader's rules hold of it with that one key.
+            KeyFrom::One => Ok(String::new()),
         };
         let key = match key {
             Ok(key) => key,

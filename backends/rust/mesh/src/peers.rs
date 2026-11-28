@@ -209,6 +209,12 @@ pub enum KeyFrom {
     Field(&'static str),
     /// `client`: the name of the peer whose link the envelope arrived on.
     Client,
+    /// `none`: no key is read. The pool keeps one session, whose key is the
+    /// empty key, and every input it takes is that session's: each entry of
+    /// the journals and observed streams it follows, and each envelope a
+    /// client sends (docs/adr/0114, D4). A key read from an envelope is never
+    /// empty, so the empty key is one no other source gives.
+    One,
 }
 
 /// deploy.yaml's `sessions:`: the machine is served as a pool of sessions,
@@ -219,8 +225,10 @@ pub struct Sessions {
     /// Where a session's key is read.
     pub key_from: KeyFrom,
     /// The most bytes a key may hold: the bound of the key field's type, as
-    /// the build read it from the request schemas, or the pool's ceiling for
-    /// a client's name. A longer key names no session.
+    /// the build read it from the request schemas, the pool's ceiling for a
+    /// client's name, or `0` for the empty key of a pool that keeps one
+    /// session ([`KeyFrom::One`]). A longer key read from an envelope or an
+    /// entry names no session.
     pub max_key_bytes: u32,
     /// How long a session with no event and nothing pending stays in memory
     /// before it is saved and dropped, in milliseconds.
@@ -237,7 +245,8 @@ pub struct Sessions {
     pub commit_delay_us: u64,
     /// deploy.yaml's `follows:` (docs/adr/0114, D4): the journals whose
     /// entries the pool takes in, each delivered to the session its key field
-    /// names ([`crate::pool::Pool::follow`]).
+    /// names, or to the pool's one session under [`KeyFrom::One`]
+    /// ([`crate::pool::Pool::follow`]).
     pub follows: Follows,
     /// deploy.yaml's `sessions.position_from` (docs/adr/0116, D5): the
     /// top-level field of a request's data that may carry a position of the
