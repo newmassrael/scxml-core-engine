@@ -11708,11 +11708,7 @@ assertions is held to.
 
 ---
 
-## Appendix — `DiagnosticCode` index (580 codes)
-## Appendix — `DiagnosticCode` index (573 codes)
-## Appendix — `DiagnosticCode` index (574 codes)
-## Appendix — `DiagnosticCode` index (575 codes)
-## Appendix — `DiagnosticCode` index (576 codes)
+## Appendix — `DiagnosticCode` index (586 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
