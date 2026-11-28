@@ -4834,6 +4834,64 @@
             "name"
           ],
           "type": "object"
+        },
+        {
+          "description": "A read model, or a document of relations. See [`ViewModel`].",
+          "properties": {
+            "body": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ViewBody"
+                }
+              ],
+              "description": "The query and its result, or the relations."
+            },
+            "kind": {
+              "enum": [
+                "view"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"view\">` root element, which a refusal of the document as a whole names."
+            },
+            "tables": {
+              "description": "The `<sce:table>` elements in document order.",
+              "items": {
+                "$ref": "#/definitions/ViewTable"
+              },
+              "type": "array"
+            },
+            "viewer": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ViewViewer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<sce:viewer of>`, when the view's value is a value per viewer (D6)."
+            }
+          },
+          "required": [
+            "body",
+            "kind",
+            "name",
+            "tables"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -5311,6 +5369,13 @@
           "description": "The finite values a search of one machine is made over — docs/adr/0115, D15: the events that may come from outside and the most that come. It claims nothing and is no part of the specification. A declaration, read by `sce-codegen formal properties`; it emits nothing of its own on any backend.",
           "enum": [
             "exploration"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A read model — docs/adr/0151, D1: a relational query over bounded keyed tables (from, join, where, group, select, order) read into a typed plan the build makes before anything runs, its key inferred, its order total and every table read through the filter of the viewer's relations (D6); or a document of relations, the rewrites a viewer's relations are derived by (D5). Rust is its lane (D10); until the lane lands, and on every other backend, generation refuses it by name (`view/backend-unsupported`).",
+          "enum": [
+            "view"
           ],
           "type": "string"
         }
@@ -7486,6 +7551,36 @@
       ],
       "type": "object"
     },
+    "RelationRewrite": {
+      "description": "A rewrite: its terms combined, less what its `<sce:but-not>` excludes.",
+      "properties": {
+        "combine": {
+          "$ref": "#/definitions/RewriteCombine"
+        },
+        "excluded": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RelationRewrite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<sce:but-not>`: the subjects its own rewrite derives are taken out."
+        },
+        "terms": {
+          "items": {
+            "$ref": "#/definitions/RewriteTerm"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "combine",
+        "terms"
+      ],
+      "type": "object"
+    },
     "RenameKind": {
       "description": "What a `<sce:rename>` renames.",
       "enum": [
@@ -7512,6 +7607,119 @@
         "name"
       ],
       "type": "object"
+    },
+    "RewriteCombine": {
+      "description": "How a rewrite's terms are combined: the children of a relation and of a `<sce:but-not>` are united, those of an `<sce:all>` intersected.",
+      "enum": [
+        "union",
+        "intersection"
+      ],
+      "type": "string"
+    },
+    "RewriteTerm": {
+      "description": "One term of a rewrite (Zanzibar's `_this`, computed userset and tuple to userset, and an intersection of terms).",
+      "oneOf": [
+        {
+          "description": "`<sce:direct subjects>`: the subjects of the tuples of this relation on the object, a principal, or a set of principals expanded through one of the relations `subjects` names.",
+          "properties": {
+            "subjects": {
+              "items": {
+                "$ref": "#/definitions/SubjectSet"
+              },
+              "type": "array"
+            },
+            "term": {
+              "enum": [
+                "direct"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "term"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:computed relation>`: the subjects of another relation of the same object.",
+          "properties": {
+            "relation": {
+              "type": "string"
+            },
+            "term": {
+              "enum": [
+                "computed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "relation",
+            "term"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:through relation then>`: the subjects of the relation `then` of each object the tuples of `relation` on this object name.",
+          "properties": {
+            "relation": {
+              "type": "string"
+            },
+            "term": {
+              "enum": [
+                "through"
+              ],
+              "type": "string"
+            },
+            "then": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "relation",
+            "term",
+            "then"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:all>`: the subjects every one of its terms derives.",
+          "properties": {
+            "combine": {
+              "$ref": "#/definitions/RewriteCombine"
+            },
+            "excluded": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RelationRewrite"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<sce:but-not>`: the subjects its own rewrite derives are taken out."
+            },
+            "term": {
+              "enum": [
+                "all"
+              ],
+              "type": "string"
+            },
+            "terms": {
+              "items": {
+                "$ref": "#/definitions/RewriteTerm"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "combine",
+            "term",
+            "terms"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
@@ -7877,6 +8085,22 @@
         "on_entry_blocks",
         "on_exit_blocks",
         "transitions"
+      ],
+      "type": "object"
+    },
+    "SubjectSet": {
+      "description": "A set of principals a tuple's subject may name, `object#relation`: the subjects of `relation` of an object of the type `object`.",
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "object",
+        "relation"
       ],
       "type": "object"
     },
@@ -9513,6 +9737,717 @@
         "inconclusive",
         "fail",
         "none"
+      ],
+      "type": "string"
+    },
+    "ViewBody": {
+      "description": "The body of a view document: a query, or relations (D5).",
+      "oneOf": [
+        {
+          "description": "The `<sce:query>` and the `<sce:result>` of a view (docs/adr/0151, D1 and D2).",
+          "properties": {
+            "body": {
+              "enum": [
+                "query"
+              ],
+              "type": "string"
+            },
+            "from": {
+              "$ref": "#/definitions/ViewSource"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "order": {
+              "description": "The `<sce:order by>` keys as written; the build appends the result's key (D2). Empty where no `<sce:order>` is written.",
+              "items": {
+                "$ref": "#/definitions/ViewOrderKey"
+              },
+              "type": "array"
+            },
+            "order_line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "result": {
+              "$ref": "#/definitions/ViewResult"
+            },
+            "shape": {
+              "$ref": "#/definitions/ViewShape"
+            },
+            "steps": {
+              "description": "The `<sce:join>` and `<sce:where>` elements in document order, each over the rows of the ones before it.",
+              "items": {
+                "$ref": "#/definitions/ViewStep"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "body",
+            "from",
+            "result",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "body": {
+              "enum": [
+                "relations"
+              ],
+              "type": "string"
+            },
+            "relations": {
+              "items": {
+                "$ref": "#/definitions/ViewRelation"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "body",
+            "relations"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewGroupOutput": {
+      "description": "One column a group gives.",
+      "oneOf": [
+        {
+          "description": "`<sce:field name expr>`: a value the group's `by` determines.",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "enum": [
+                "field"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:count name>`: the rows of the group.",
+          "properties": {
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "enum": [
+                "count"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:sum name expr>`.",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "enum": [
+                "sum"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:min name expr>`.",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "enum": [
+                "min"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:max name expr>`.",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "enum": [
+                "max"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:nest name type order>`: the group's rows as a list.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/ViewOutputField"
+              },
+              "type": "array"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "order": {
+              "description": "The order its rows are held in, as written; the build completes it by the key of the rows it holds (D2).",
+              "items": {
+                "$ref": "#/definitions/ViewOrderKey"
+              },
+              "type": "array"
+            },
+            "output": {
+              "enum": [
+                "nest"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ValueType"
+                }
+              ],
+              "description": "The list it is, `list<record:R>[B]`: its bound cuts it by its order (D2)."
+            }
+          },
+          "required": [
+            "fields",
+            "name",
+            "output",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewJoinKind": {
+      "description": "An inner join, or a left join, whose right side is of an optional type (docs/adr/0151, D1; docs/adr/0055).",
+      "enum": [
+        "inner",
+        "left"
+      ],
+      "type": "string"
+    },
+    "ViewOrderKey": {
+      "description": "One key of an order: an expression, ascending unless `desc` is written.",
+      "properties": {
+        "descending": {
+          "type": "boolean"
+        },
+        "expr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr"
+      ],
+      "type": "object"
+    },
+    "ViewOutputField": {
+      "description": "A named column and the expression it is computed by.",
+      "properties": {
+        "expr": {
+          "type": "string"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ViewRelation": {
+      "description": "One `<sce:relation name object>` of a document of relations (docs/adr/0151, D5): the relation `name` of an object of the type `object`, as Zanzibar's namespace rewrites derive it.",
+      "properties": {
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "rewrite": {
+          "$ref": "#/definitions/RelationRewrite"
+        }
+      },
+      "required": [
+        "name",
+        "object",
+        "rewrite"
+      ],
+      "type": "object"
+    },
+    "ViewResult": {
+      "description": "`<sce:result type key bound>` (docs/adr/0151, D2).",
+      "properties": {
+        "bound": {
+          "description": "The most rows the value holds, cut by the order (D2), by name (D8).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "The fields of that record the result is keyed by.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "record": {
+          "description": "The alias of the event schema whose record a row of the result is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bound",
+        "key",
+        "record"
+      ],
+      "type": "object"
+    },
+    "ViewShape": {
+      "description": "What a query's rows are projected to: one row per group, or one row per row.",
+      "oneOf": [
+        {
+          "description": "`<sce:group by>` and what each group gives.",
+          "properties": {
+            "by": {
+              "description": "The expressions the rows are grouped by, as `by` lists them.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "outputs": {
+              "items": {
+                "$ref": "#/definitions/ViewGroupOutput"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "enum": [
+                "group"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "by",
+            "outputs",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:select>`: one row per row, of the fields it names.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/ViewOutputField"
+              },
+              "type": "array"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "shape": {
+              "enum": [
+                "select"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "shape"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewSource": {
+      "description": "The table a `<sce:from>` reads and the alias its rows are named by.",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "table": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "alias",
+        "table"
+      ],
+      "type": "object"
+    },
+    "ViewStep": {
+      "description": "A `<sce:join>` or a `<sce:where>` of a query.",
+      "oneOf": [
+        {
+          "description": "`<sce:join table as on kind>`.",
+          "properties": {
+            "alias": {
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/definitions/ViewJoinKind"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "on": {
+              "description": "The condition a pair of rows joins on, an expression over the aliases before it and this one.",
+              "type": "string"
+            },
+            "step": {
+              "enum": [
+                "join"
+              ],
+              "type": "string"
+            },
+            "table": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "alias",
+            "kind",
+            "on",
+            "step",
+            "table"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:where cond>`.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "step": {
+              "enum": [
+                "where"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cond",
+            "step"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewTable": {
+      "description": "One `<sce:table>` of a [`ViewModel`].",
+      "properties": {
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The name the query reads the table by and a machine binds it by.",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/ViewTableSource"
+        },
+        "visibility": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ViewVisibility"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Who may read a row; `None` where the document says neither, which the plan refuses for a table of a type (D6) and takes for a table of a view, whose rows are already its viewer's (D3)."
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ViewTableSource": {
+      "description": "What a table's rows are.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`type`: a map or a set of the machine that binds it (docs/adr/0108).",
+          "properties": {
+            "type": {
+              "$ref": "#/definitions/ValueType"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`view`: the result of the view imported under this alias (D3).",
+          "properties": {
+            "view": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "view"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewViewer": {
+      "description": "The `<sce:viewer>` of a [`ViewModel`].",
+      "properties": {
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "of": {
+          "$ref": "#/definitions/ViewerOf"
+        }
+      },
+      "required": [
+        "of"
+      ],
+      "type": "object"
+    },
+    "ViewVisibility": {
+      "description": "Who may read a row of a table (docs/adr/0151, D6).",
+      "oneOf": [
+        {
+          "description": "`public=\"true\"`: every viewer may read it all.",
+          "properties": {
+            "visible": {
+              "enum": [
+                "public"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "visible"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:visible relations relation object>`: a row may be read by the viewers that stand in `relation` to the object `object` names, the relation derived by the document of relations imported as `relations`. `object` is an expression over the row's `key` and `row`.",
+          "properties": {
+            "object": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "relations": {
+              "type": "string"
+            },
+            "visible": {
+              "enum": [
+                "relation"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "object",
+            "relation",
+            "relations",
+            "visible"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ViewerOf": {
+      "description": "Who a viewer is (docs/adr/0151, D6): the person a delegation names (docs/adr/0116, D1) or the instance a request comes from (docs/adr/0113, D1).",
+      "enum": [
+        "person",
+        "instance"
       ],
       "type": "string"
     },
