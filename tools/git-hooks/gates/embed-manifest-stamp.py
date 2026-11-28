@@ -22,13 +22,11 @@
     # 0s warm on a developer's tree.
     "cost_s": 2,
     "summary": "embed manifest emitted from the inputs it is committed with",
-    # It runs in the host image wherever it runs (ADR 0145): the runner runs
-    # `scripts/gate` inside the image its Containerfile addresses, so the
-    # hosted lane, a build machine and a workstation judge it in one
-    # environment, and no lane installs a package for it. A machine takes its
-    # unit only where docker runs (`needs`).
-    "container": "tools/ci-images/host/Containerfile",
-    "needs": ["docker"],
+    # Not in an image: it reads git objects with python3 and installs nothing,
+    # so an image adds docker to what it needs and nothing to what it reads
+    # (ADR 0145, "A gate that needs no package"). In one it found no commit in
+    # a bx copy of the tree on every build machine, and every landing that
+    # selected it came back unmeasured (2026-11-28).
     # Reads HEAD's objects (`check --rev HEAD`, `git show`) and the
     # commit each submodule is at, so the unit carries HEAD's id
     # (`commits`). The plan also keeps no verdict for a tree that differs

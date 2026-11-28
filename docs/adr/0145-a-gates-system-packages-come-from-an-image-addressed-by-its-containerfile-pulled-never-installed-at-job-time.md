@@ -42,6 +42,12 @@ gates that use it judge.
 its runtime packages), and `gcc15` (`cpp-interface-standard`, whose verdict is the newest GCC's). A gate names one
 family; a new family needs a gate whose environment no family holds.
 
+**A gate that needs no package (amended 2026-11-28).** D1 is about packages: a gate whose only tools are
+the ones every runner and build machine has (bash, git, python3) runs where the runner is, since an image adds
+docker to what it needs and nothing to what it reads. `embed-manifest-stamp` was moved into the host image with
+its lane and, in a bx copy of the tree, found no commit inside the container on every build machine, so every
+landing that selected it came back unmeasured; it runs on the runner again.
+
 ## Measured
 
 - Three hosted runs ended red on the package archive alone (above); none of them said anything about the tree.
