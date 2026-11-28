@@ -1,0 +1,7 @@
+token = "c8e92c4bd84a"
+machine = "m6a944ec3ba29"
+pid = 3523099
+expires = 1795883550
+stage = """
+reconciling on 8802954b368c: judging [489]
+release 6ab5a4adc90f5b6ba7ca973f1347561d24487eb4"""
