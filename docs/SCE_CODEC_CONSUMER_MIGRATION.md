@@ -4355,6 +4355,23 @@ holds a record or an enum key.
   different kinds are never one key (an eight-byte `bytes` key and an integer no longer can be, which no document
   could write).
 
+## A generated Rust algorithm searches a map once for a key it would search again (ADR 0161)
+
+Landing: the commits that add this section. No committed generated tree changes; the Rust of an algorithm that tests,
+reads and puts one key of a map changes where it is generated again.
+
+- `sce_portable_bytes` and `sce_rust_runtime` export `MapFound<G, H>`, what `BoundedMap::find(&key)` and
+  `BoundedSet::find(&key)` found: the key's position, or its absence with the stamp an insert of it keeps.
+  `value_found(&found)` reads through it, `put_found(&mut found, key, value)` (a set's without the value) puts through
+  it with no search of its own, and `found.is_found()` says whether the key was held. The reads module
+  (`sce_portable_bytes::map`) gains `found_holds`, `found_value`, `found_value_cloned`, `found_held` and
+  `found_held_cloned`.
+- A generated Rust algorithm that searches one map for one key more than once, with nothing between that can move the
+  key's entry, declares `let sce_found_<n> = m.find(&k);` before the first search and reads and puts through it. What
+  it answers, its outcomes and its failures are what they were.
+- Nothing you call changes. A host that keeps a `MapFound` of its own keeps it only while nothing removes from the
+  map, clears it or puts another key into it; a debug build asserts that where a put goes through it.
+
 ## A buffer pool is lent: a run-time count and length, the caller's storage, an index across an interface (ADR 0111 D4)
 
 Landing: the commits that add this section. No committed generated tree changes; a consumer that generates a
