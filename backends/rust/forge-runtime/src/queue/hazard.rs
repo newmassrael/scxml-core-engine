@@ -321,7 +321,6 @@ impl<const H: usize> HazardDomain<H> {
     }
 }
 
-#[cfg(not(loom))]
 impl<const H: usize> Default for HazardDomain<H> {
     fn default() -> Self {
         Self::new()
