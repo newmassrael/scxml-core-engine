@@ -184,6 +184,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # WASM pre-js, an interactive test, a Python test) shared no prefix, and the
 # next is written in a file that does not exist today.
 #
+# `an_adr_is_titled_by_a_number_no_other_adr_has` reads every decision record
+# under `docs/adr/` and refuses a number two records carry, or a title that
+# reads another number than its file's name. No lane that runs sce-build's
+# suites names `docs/adr/**` in its `paths:`, so a record added on its own
+# started nothing that judged it: two numbers, 0146 and 0148, each came to name
+# two records that way (2026-11-28).
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -332,6 +339,7 @@ hygiene_part cargo test -p sce-build --features cli,ffi \
     --test a_workflow_names_the_image_it_runs_on \
     --test a_pipeline_has_no_reader_that_leaves_early \
     --test no_workflow_installs_a_package_at_job_time \
+    --test an_adr_is_titled_by_a_number_no_other_adr_has \
     || sce_gate_fail "tree-wide hygiene gates"
 
 # What this part ran, for the lane's last job to hold beside the other parts'
