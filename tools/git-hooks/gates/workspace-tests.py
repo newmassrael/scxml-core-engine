@@ -181,6 +181,10 @@
         # The registry of metric names both lanes are held to (docs/adr/0109,
         # D16), which `sce-rust-metrics` reads at run time.
         "tests/metrics/**",
+        # The Unicode pin (docs/adr/0158, D6), which
+        # `the_unicode_pin_names_the_data_the_lock_holds` compiles in and holds
+        # to the lock: an edit of it alone has to start the suite.
+        "unicode/**",
         # The narrow row's runtime header, which the C11 broadcast-log
         # tests read to hold the stamp width the generator judges against
         # to the width the header keeps and each name the generated header

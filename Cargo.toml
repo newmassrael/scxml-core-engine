@@ -94,6 +94,10 @@ heapless = "0.8"
 # `sce-build/src/forge/drift.rs` to compute `source-hash` over the
 # input SCXML + deploy.yaml set. Build-time only; not pulled into runtime.
 sha2 = "0.10"
+# ICU4X's Unicode data, at the one version `unicode/pin.toml` names (docs/adr/0158, D6). Required
+# exactly, so a refresh of the lock cannot move the Unicode a build reads; a move of the pin moves
+# this line, the pin file and the lock together.
+icu_properties = { version = "=2.2.0", default-features = false, features = ["compiled_data"] }
 
 # Release profile optimized for W3C test throughput
 [profile.release]

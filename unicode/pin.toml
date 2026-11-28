@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The one Unicode every build reads (docs/adr/0158, D6): ICU4X's compiled data at one version,
+# which `[workspace.dependencies]` of the root Cargo.toml requires exactly, and the Unicode and
+# CLDR versions that data was made from. The regular expressions' classes read it
+# (docs/adr/0149), and so will normalisation, plural rules and collation.
+#
+# A change of the pin is one change: the exact requirements, this file and Cargo.lock together,
+# judged by every test that reads the data. `the_unicode_pin_names_the_data_the_lock_holds`
+# (sce-build/tests) holds this file to the lock and to the requirements.
+
+[versions]
+icu4x = "2.2.0"
+# ICU4X 2.2.0's data is exported from ICU 78 and CLDR 48.2 (`[package.metadata.sources]` of
+# `icu_properties_data` 2.2.0: icuexport `release-78.1rc`, cldr `48.2.0`); ICU 78 is Unicode 17.
+unicode = "17.0.0"
+cldr = "48.2.0"
