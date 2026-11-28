@@ -8259,9 +8259,9 @@ pub(crate) const RUST_MAP_READS: &str = "::sce_rust_runtime::portable::map";
 /// holds it, so a read copies no more than the field. A value read at a key
 /// that is absent is none, which `found` fails `out-of-range` as an index
 /// outside a list fails, and so is a call that can fail. A key is looked up by
-/// its canonical bytes (the runtime's `MapKey`), so a value of another width, a
-/// text slice and a payload taken whole each find the key they write the bytes
-/// of; an integer literal is written at the key's own type, which its value is
+/// its atoms (the runtime's `MapKey`), so a value of another width, a text
+/// slice and a payload taken whole each find the key whose atoms they have; an
+/// integer literal is written at the key's own type, which its value is
 /// held to where it is judged. Run after the reads are judged and before any
 /// rename, while each map is the place the author named.
 ///

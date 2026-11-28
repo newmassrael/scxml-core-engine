@@ -35,12 +35,21 @@ pub struct GcraDecisionPayload {
     pub retry_after: i64,
 }
 
-/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
-/// its schema declares them.
+/// docs/adr/0108, D1: a payload is a key of a map by its fields' atoms, in the
+/// order its schema declares the fields.
 impl ::sce_portable_bytes::MapKey for GcraDecisionPayload {
-    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
-        ::sce_portable_bytes::MapKey::feed_key(&self.admitted, into);
-        ::sce_portable_bytes::MapKey::feed_key(&self.tat, into);
-        ::sce_portable_bytes::MapKey::feed_key(&self.retry_after, into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        ::sce_portable_bytes::MapKey::atoms(&self.admitted)
+            + ::sce_portable_bytes::MapKey::atoms(&self.tat)
+            + ::sce_portable_bytes::MapKey::atoms(&self.retry_after)
+    }
+    #[inline]
+    fn atom(&self, at: usize) -> ::sce_portable_bytes::KeyAtom<'_> {
+        ::sce_portable_bytes::FieldAtoms::at(at)
+            .field(&self.admitted)
+            .field(&self.tat)
+            .field(&self.retry_after)
+            .atom()
     }
 }

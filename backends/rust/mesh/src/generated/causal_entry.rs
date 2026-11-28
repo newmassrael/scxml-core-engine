@@ -35,12 +35,21 @@ pub struct CausalEntryPayload {
     pub seq: u64,
 }
 
-/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
-/// its schema declares them.
+/// docs/adr/0108, D1: a payload is a key of a map by its fields' atoms, in the
+/// order its schema declares the fields.
 impl ::sce_portable_bytes::MapKey for CausalEntryPayload {
-    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
-        ::sce_portable_bytes::MapKey::feed_key(&self.hi, into);
-        ::sce_portable_bytes::MapKey::feed_key(&self.lo, into);
-        ::sce_portable_bytes::MapKey::feed_key(&self.seq, into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        ::sce_portable_bytes::MapKey::atoms(&self.hi)
+            + ::sce_portable_bytes::MapKey::atoms(&self.lo)
+            + ::sce_portable_bytes::MapKey::atoms(&self.seq)
+    }
+    #[inline]
+    fn atom(&self, at: usize) -> ::sce_portable_bytes::KeyAtom<'_> {
+        ::sce_portable_bytes::FieldAtoms::at(at)
+            .field(&self.hi)
+            .field(&self.lo)
+            .field(&self.seq)
+            .atom()
     }
 }

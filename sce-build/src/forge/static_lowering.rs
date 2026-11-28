@@ -7444,26 +7444,33 @@ impl StaticTarget for RustTarget {
     fn map_type(&self, key: &str, value: Option<&str>, capacity: u32) -> Option<String> {
         Some(rust_map_type(key, value, &capacity.to_string()))
     }
-    // The runtime's `MapKey`, fed each field's canonical bytes in the order the
-    // schema declares the fields.
+    // The runtime's `MapKey`: each field's atoms, in the order the schema
+    // declares the fields.
     fn map_key_record_def(
         &self,
         ty: &str,
         fields: &[String],
         _schema: &EntrySchema,
     ) -> Option<String> {
-        let feeds: String = fields
+        let atoms = fields
             .iter()
-            .map(|field| {
-                format!("        ::sce_rust_runtime::MapKey::feed_key(&self.{field}, into);\n")
-            })
+            .map(|field| format!("::sce_rust_runtime::MapKey::atoms(&self.{field})"))
+            .collect::<Vec<_>>()
+            .join("\n            + ");
+        let named: String = fields
+            .iter()
+            .map(|field| format!("\n            .field(&self.{field})"))
             .collect();
         Some(format!(
-            "/// docs/adr/0108, D1: a `{ty}` is a key of a map by its fields, in the order its \
-             schema declares them.\n\
+            "/// docs/adr/0108, D1: a `{ty}` is a key of a map by its fields' atoms, in the \
+             order its schema declares the fields.\n\
              impl ::sce_rust_runtime::MapKey for {ty} {{\n    \
-             fn feed_key(&self, into: &mut dyn ::sce_rust_runtime::KeyFeed) {{\n\
-             {feeds}    }}\n}}"
+             #[inline]\n    \
+             fn atoms(&self) -> usize {{\n        \
+             {atoms}\n    }}\n    \
+             #[inline]\n    \
+             fn atom(&self, at: usize) -> ::sce_rust_runtime::KeyAtom<'_> {{\n        \
+             ::sce_rust_runtime::FieldAtoms::at(at){named}\n            .atom()\n    }}\n}}"
         ))
     }
     // ... and an enum's by the number its document declares for each value
@@ -7473,8 +7480,12 @@ impl StaticTarget for RustTarget {
             "/// docs/adr/0108, D1: a value of `{ty}` is a key of a map by the number its \
              document declares for it.\n\
              impl ::sce_rust_runtime::MapKey for {ty} {{\n    \
-             fn feed_key(&self, into: &mut dyn ::sce_rust_runtime::KeyFeed) {{\n        \
-             ::sce_rust_runtime::MapKey::feed_key(&self.to_underlying(), into);\n    }}\n}}"
+             #[inline]\n    \
+             fn atoms(&self) -> usize {{\n        1\n    }}\n    \
+             #[inline]\n    \
+             fn atom(&self, _at: usize) -> ::sce_rust_runtime::KeyAtom<'_> {{\n        \
+             ::sce_rust_runtime::KeyAtom::Integer(::core::convert::From::from(self.to_underlying()))\n    \
+             }}\n}}"
         ))
     }
     // A map holds its record and enum entries in the types their units declare

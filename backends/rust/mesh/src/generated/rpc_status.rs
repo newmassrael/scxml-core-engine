@@ -63,7 +63,12 @@ impl RpcStatus {
 /// docs/adr/0108, D1: a value of this enum is a key of a map by the number its
 /// document declares for it.
 impl ::sce_portable_bytes::MapKey for RpcStatus {
-    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
-        ::sce_portable_bytes::MapKey::feed_key(&self.to_underlying(), into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        1
+    }
+    #[inline]
+    fn atom(&self, _at: usize) -> ::sce_portable_bytes::KeyAtom<'_> {
+        ::sce_portable_bytes::KeyAtom::Integer(::core::convert::From::from(self.to_underlying()))
     }
 }

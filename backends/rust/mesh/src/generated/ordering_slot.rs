@@ -34,11 +34,19 @@ pub struct OrderingSlotPayload {
     pub arrived_at_ms: i64,
 }
 
-/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
-/// its schema declares them.
+/// docs/adr/0108, D1: a payload is a key of a map by its fields' atoms, in the
+/// order its schema declares the fields.
 impl ::sce_portable_bytes::MapKey for OrderingSlotPayload {
-    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
-        ::sce_portable_bytes::MapKey::feed_key(&self.seq, into);
-        ::sce_portable_bytes::MapKey::feed_key(&self.arrived_at_ms, into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        ::sce_portable_bytes::MapKey::atoms(&self.seq)
+            + ::sce_portable_bytes::MapKey::atoms(&self.arrived_at_ms)
+    }
+    #[inline]
+    fn atom(&self, at: usize) -> ::sce_portable_bytes::KeyAtom<'_> {
+        ::sce_portable_bytes::FieldAtoms::at(at)
+            .field(&self.seq)
+            .field(&self.arrived_at_ms)
+            .atom()
     }
 }

@@ -645,8 +645,9 @@ impl<'ast> syn::visit::Visit<'ast> for SelfFields {
 }
 
 /// Each type `text`, a Rust file, makes a key of the runtime's map
-/// (`impl ::sce_portable_bytes::MapKey for <type>`), with the fields of it the
-/// impl feeds, in order; read off the syntax tree.
+/// (`impl ::sce_portable_bytes::MapKey for <type>`), with the fields of it whose
+/// atoms the key is, in order; read off the syntax tree. The impl's `atoms` and
+/// its `atom` name the same fields in the same order.
 fn map_key_impls(text: &str) -> Vec<(String, Vec<String>)> {
     use quote::ToTokens;
     let tree = syn::parse_file(text).expect("the unit parses as Rust");
@@ -665,9 +666,25 @@ fn map_key_impls(text: &str) -> Vec<(String, Vec<String>)> {
             if named != ["sce_portable_bytes", "MapKey"] {
                 return None;
             }
-            let mut fed = SelfFields::default();
-            syn::visit::Visit::visit_item_impl(&mut fed, implemented);
-            Some((implemented.self_ty.to_token_stream().to_string(), fed.0))
+            let fields_of = |name: &str| {
+                let mut read = SelfFields::default();
+                for item in &implemented.items {
+                    if let syn::ImplItem::Fn(function) = item {
+                        if function.sig.ident == name {
+                            syn::visit::Visit::visit_impl_item_fn(&mut read, function);
+                        }
+                    }
+                }
+                read.0
+            };
+            let ty = implemented.self_ty.to_token_stream().to_string();
+            let atoms = fields_of("atoms");
+            let atom = fields_of("atom");
+            assert_eq!(
+                atoms, atom,
+                "{ty}: `atoms` and `atom` name one sequence of fields"
+            );
+            Some((ty, atom))
         })
         .collect()
 }

@@ -1798,8 +1798,8 @@ pub struct MapUnit {
     /// The function that writes the canonical bytes (D1) of a key the machine
     /// holds in its own type, for a target whose map's lookup is handed the
     /// function that writes the key it is given (C11), the map's own feed
-    /// being of [`Self::ty`]; `None` for a target whose key types write their
-    /// bytes themselves (Rust's `MapKey`).
+    /// being of [`Self::ty`]; `None` for a target whose key types give their
+    /// atoms themselves (Rust's `MapKey`).
     pub key_feed: Option<String>,
 }
 

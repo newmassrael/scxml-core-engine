@@ -332,9 +332,9 @@ pub use sce_portable_bytes as portable;
 /// host lends it, sized at run time (docs/adr/0154), each entry's slot read as
 /// a `MapSlot`.
 pub use sce_portable_bytes::{
-    BoundedMap, BoundedSet, DefaultMapStorage, FromSeed, Inline, KeyFeed, LendRefused, Lent,
-    LentCell, LentIndexed, LentIndexedSlot, LentSlot, Linear, MapCursor, MapKey, MapSeed, MapSeeds,
-    MapSlot, MapStorage, PutOutcome, RemoveOutcome,
+    BoundedMap, BoundedSet, DefaultMapStorage, FieldAtoms, FromSeed, Inline, KeyAtom, LendRefused,
+    Lent, LentCell, LentIndexed, LentIndexedSlot, LentSlot, Linear, MapCursor, MapKey, MapSeed,
+    MapSeeds, MapSlot, MapStorage, PutOutcome, RemoveOutcome,
 };
 
 /// A seed for the maps of one machine, drawn from the operating system's

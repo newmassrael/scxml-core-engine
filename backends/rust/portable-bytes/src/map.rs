@@ -20,7 +20,7 @@
 //!   no index, a lookup comparing the key with each key the map holds.
 //!
 //! The hash is SipHash-1-3 under a 128-bit key each map is built with
-//! ([`MapSeed`]), over the canonical bytes of the key ([`MapKey`]), so a peer
+//! ([`MapSeed`]), over the canonical bytes of the key's atoms ([`MapKey`]), so a peer
 //! that chooses the keys cannot steer them into one chain of the index
 //! without the seed. Nothing a document or a host sees depends on the hash: the
 //! order is the links', and a map restored under another seed is the same map.
@@ -163,12 +163,6 @@ impl<const C: usize, const D: usize> SipHash<C, D> {
     }
 }
 
-impl<const C: usize, const D: usize> KeyFeed for SipHash<C, D> {
-    fn feed(&mut self, bytes: &[u8]) {
-        self.write(bytes);
-    }
-}
-
 // ── the seed ────────────────────────────────────────────────────────────────
 
 /// The 128-bit key a map hashes its keys under (docs/adr/0108, D8), drawn for
@@ -264,35 +258,72 @@ pub trait FromSeed {
 
 // ── keys ────────────────────────────────────────────────────────────────────
 
-/// Where a key writes its canonical bytes ([`MapKey`]): the hash, or a
-/// comparison with another key.
-pub trait KeyFeed {
-    /// The next bytes of the key.
-    fn feed(&mut self, bytes: &[u8]);
+/// One part of a key's canonical form ([`MapKey`], docs/adr/0108, D1): a key
+/// is a fixed sequence of atoms, and two keys are one key exactly when they are
+/// the same sequence. Each atom is a value of one of the three kinds of exact
+/// equality D1 admits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyAtom<'k> {
+    /// A fixed-width integer, or the number an enum declares for a value, as the
+    /// 128-bit integer it is whatever its width, so a literal, a narrower value
+    /// or a wider one is the same atom.
+    Integer(i128),
+    /// A `bool`.
+    Truth(bool),
+    /// A text or a byte string, by its bytes: two are one atom when they hold
+    /// the same bytes, so a text slice is the atom of the bounded text that
+    /// holds the same bytes.
+    Bytes(&'k [u8]),
 }
 
-/// A type whose values are keys of a map (docs/adr/0108, D1), by the bytes
-/// that say which key a value is: two values are one key exactly when they
-/// write the same bytes. A fixed-width integer writes its value as the 16
-/// little-endian bytes of an `i128`, whatever its own width, so a literal, a
-/// narrower value or a wider one probes the key of the same number; `bool` one
-/// byte; a value of an enum its declared number, as an integer; a text and a
-/// byte string their length as eight little-endian bytes and then their bytes;
-/// a record its fields in the order its schema declares them.
+impl KeyAtom<'_> {
+    /// Write the atom's canonical bytes into the hash: an integer as the 16
+    /// little-endian bytes of its value, a `bool` as one byte, a text and a
+    /// byte string as its length in eight little-endian bytes and then its
+    /// bytes. A key's bytes are its atoms' in order, so no two sequences of
+    /// atoms of the same kinds write the same bytes.
+    fn hash_into(self, sip: &mut SipHash13) {
+        match self {
+            Self::Integer(value) => sip.write(&value.to_le_bytes()),
+            Self::Truth(value) => sip.write(&[u8::from(value)]),
+            Self::Bytes(bytes) => {
+                sip.write(&(bytes.len() as u64).to_le_bytes());
+                sip.write(bytes);
+            }
+        }
+    }
+}
+
+/// A type whose values are keys of a map (docs/adr/0108, D1), by their
+/// canonical form: a fixed sequence of [`KeyAtom`]s. A fixed-width integer,
+/// a `bool`, a value of an enum, a text and a byte string is one atom; a record
+/// is its fields' atoms in the order its schema declares the fields.
 ///
-/// A map compares keys by these bytes and hashes them, so a key may be looked up
-/// by any value of another type that writes them alike: a text slice for a
-/// bounded text, a payload for the record it is read into.
+/// A map compares two keys atom by atom and hashes a key's atoms
+/// (docs/adr/0108, D8), both through these two functions and nothing else, so
+/// its equality and its hash agree by construction. A key may therefore be
+/// looked up by a value of another type that has the same atoms: a literal or a
+/// value of another width for an integer, a text slice for a bounded text, a
+/// payload for the record it is read into. Every call is resolved where the
+/// map's code is compiled for the key's type, so comparing two integer keys is
+/// comparing two integers.
 pub trait MapKey {
-    /// Write the canonical bytes of the key into `into`.
-    fn feed_key(&self, into: &mut dyn KeyFeed);
+    /// How many atoms the key is: one, or for a record the sum of its fields'.
+    fn atoms(&self) -> usize;
+    /// The atom at position `at`, below [`Self::atoms`].
+    fn atom(&self, at: usize) -> KeyAtom<'_>;
 }
 
 macro_rules! integer_key {
     ($($t:ty),*) => {$(
         impl MapKey for $t {
-            fn feed_key(&self, into: &mut dyn KeyFeed) {
-                into.feed(&i128::from(*self).to_le_bytes());
+            #[inline]
+            fn atoms(&self) -> usize {
+                1
+            }
+            #[inline]
+            fn atom(&self, _at: usize) -> KeyAtom<'_> {
+                KeyAtom::Integer(i128::from(*self))
             }
         }
     )*};
@@ -300,142 +331,133 @@ macro_rules! integer_key {
 integer_key!(u8, u16, u32, u64, i8, i16, i32, i64);
 
 impl MapKey for bool {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        into.feed(&[u8::from(*self)]);
+    #[inline]
+    fn atoms(&self) -> usize {
+        1
+    }
+    #[inline]
+    fn atom(&self, _at: usize) -> KeyAtom<'_> {
+        KeyAtom::Truth(*self)
     }
 }
 
-impl MapKey for [u8] {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        into.feed(&(self.len() as u64).to_le_bytes());
-        into.feed(self);
-    }
+macro_rules! bytes_key {
+    ($(($($generics:tt)*) $t:ty => |$key:ident| $bytes:expr;)*) => {$(
+        impl<$($generics)*> MapKey for $t {
+            #[inline]
+            fn atoms(&self) -> usize {
+                1
+            }
+            #[inline]
+            fn atom(&self, _at: usize) -> KeyAtom<'_> {
+                let $key = self;
+                KeyAtom::Bytes($bytes)
+            }
+        }
+    )*};
 }
-
-/// A byte-string literal (`b"ab"`), as the slice of its bytes.
-impl<const L: usize> MapKey for [u8; L] {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_slice().feed_key(into);
-    }
-}
-
-impl MapKey for str {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_bytes().feed_key(into);
-    }
-}
-
-impl<const N: usize> MapKey for SceString<N> {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_str().feed_key(into);
-    }
-}
-
-impl<const N: usize> MapKey for BoundedList<u8, N> {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_slice().feed_key(into);
-    }
-}
-
-impl<const N: usize> MapKey for heapless::String<N> {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_str().feed_key(into);
-    }
+bytes_key! {
+    () [u8] => |key| key;
+    // A byte-string literal (`b"ab"`), as the slice of its bytes.
+    (const L: usize) [u8; L] => |key| key.as_slice();
+    () str => |key| key.as_bytes();
+    (const N: usize) SceString<N> => |key| key.as_str().as_bytes();
+    (const N: usize) BoundedList<u8, N> => |key| key.as_slice();
+    (const N: usize) heapless::String<N> => |key| key.as_str().as_bytes();
 }
 
 #[cfg(feature = "alloc")]
 impl MapKey for alloc::string::String {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        self.as_str().feed_key(into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        1
+    }
+    #[inline]
+    fn atom(&self, _at: usize) -> KeyAtom<'_> {
+        KeyAtom::Bytes(self.as_bytes())
     }
 }
 
 impl<T: MapKey + ?Sized> MapKey for &T {
-    fn feed_key(&self, into: &mut dyn KeyFeed) {
-        (**self).feed_key(into);
+    #[inline]
+    fn atoms(&self) -> usize {
+        (**self).atoms()
+    }
+    #[inline]
+    fn atom(&self, at: usize) -> KeyAtom<'_> {
+        (**self).atom(at)
     }
 }
 
-/// How many bytes a key writes.
-struct Count(usize);
+/// The atom at one position of a record's canonical form, its fields' atoms in
+/// the order its schema declares the fields: what a generated record's
+/// [`MapKey::atom`] is, `FieldAtoms::at(at).field(&self.a).field(&self.b).atom()`.
+#[derive(Clone, Copy, Debug)]
+pub struct FieldAtoms<'k> {
+    rest: usize,
+    found: Option<KeyAtom<'k>>,
+}
 
-impl KeyFeed for Count {
-    fn feed(&mut self, bytes: &[u8]) {
-        self.0 += bytes.len();
+impl<'k> FieldAtoms<'k> {
+    /// The atom at position `at` of the record, its fields not yet named.
+    #[inline]
+    pub const fn at(at: usize) -> Self {
+        Self {
+            rest: at,
+            found: None,
+        }
     }
-}
 
-/// The bytes `expected` held against the bytes a key writes from position
-/// `start` on: whether every one of them is equal, and how many were met.
-struct Window<'e> {
-    start: usize,
-    expected: &'e [u8],
-    at: usize,
-    met: usize,
-    equal: bool,
-}
-
-impl KeyFeed for Window<'_> {
-    fn feed(&mut self, bytes: &[u8]) {
-        let begin = self.at;
-        let end = begin + bytes.len();
-        self.at = end;
-        let low = begin.max(self.start);
-        let high = end.min(self.start + self.expected.len());
-        if low < high {
-            if bytes[low - begin..high - begin]
-                != self.expected[low - self.start..high - self.start]
-            {
-                self.equal = false;
+    /// The next field of the record: the atom is this field's when the
+    /// position falls among its atoms.
+    #[inline]
+    #[must_use]
+    pub fn field<T: MapKey + ?Sized>(self, field: &'k T) -> Self {
+        if self.found.is_some() {
+            return self;
+        }
+        let atoms = field.atoms();
+        if self.rest < atoms {
+            Self {
+                rest: 0,
+                found: Some(field.atom(self.rest)),
             }
-            self.met += high - low;
+        } else {
+            Self {
+                rest: self.rest - atoms,
+                found: None,
+            }
+        }
+    }
+
+    /// The atom, every field named.
+    ///
+    /// # Panics
+    ///
+    /// When the position is not below the record's atoms, which
+    /// [`MapKey::atom`] requires of its caller.
+    #[inline]
+    pub fn atom(self) -> KeyAtom<'k> {
+        match self.found {
+            Some(atom) => atom,
+            None => panic!("a key's atom is read at a position below its atoms"),
         }
     }
 }
 
-/// The bytes one key writes, each run held against the same run of the bytes
-/// `other` writes, which is written again for each run: no key's bytes are
-/// held anywhere, so two keys of any bound compare with nothing allocated.
-struct Matcher<'o, O: ?Sized> {
-    other: &'o O,
-    at: usize,
-    equal: bool,
-}
-
-impl<O: MapKey + ?Sized> KeyFeed for Matcher<'_, O> {
-    fn feed(&mut self, bytes: &[u8]) {
-        if self.equal && !bytes.is_empty() {
-            let mut window = Window {
-                start: self.at,
-                expected: bytes,
-                at: 0,
-                met: 0,
-                equal: true,
-            };
-            self.other.feed_key(&mut window);
-            self.equal = window.equal && window.met == bytes.len();
-        }
-        self.at += bytes.len();
-    }
-}
-
-/// Whether `a` and `b` are one key: they write the same bytes ([`MapKey`]).
+/// Whether `a` and `b` are one key: the same sequence of atoms ([`MapKey`]).
+#[inline]
 fn same_key<A: MapKey + ?Sized, B: MapKey + ?Sized>(a: &A, b: &B) -> bool {
-    let mut length = Count(0);
-    b.feed_key(&mut length);
-    let mut matcher = Matcher {
-        other: b,
-        at: 0,
-        equal: true,
-    };
-    a.feed_key(&mut matcher);
-    matcher.equal && matcher.at == length.0
+    let atoms = a.atoms();
+    atoms == b.atoms() && (0..atoms).all(|at| a.atom(at) == b.atom(at))
 }
 
-/// The hash of `key` under `seed`.
+/// The hash of `key` under `seed`: SipHash-1-3 of its atoms' canonical bytes.
 fn hash_of<Q: MapKey + ?Sized>(seed: &MapSeed, key: &Q) -> u64 {
     let mut sip = SipHash13::new(seed);
-    key.feed_key(&mut sip);
+    for at in 0..key.atoms() {
+        key.atom(at).hash_into(&mut sip);
+    }
     sip.finish()
 }
 
@@ -2709,11 +2731,12 @@ mod tests {
         assert_ne!(sip13.finish(), 0xa129_ca61_49be_45e5);
     }
 
-    /// Two values are one key exactly when they write the same bytes: an
+    /// Two values are one key exactly when they are the same atoms: an
     /// integer whatever its width, a text whatever holds it, and two texts
-    /// whose bytes run together alike are not one key.
+    /// whose bytes run together alike are not one key. A key hashes as the
+    /// same key held in another type does.
     #[test]
-    fn keys_are_equal_by_their_canonical_bytes() {
+    fn keys_are_equal_by_their_atoms() {
         assert!(same_key(&7u8, &7i32));
         assert!(same_key(&7u64, &7u16));
         assert!(!same_key(&7u32, &8u32));
@@ -2731,6 +2754,38 @@ mod tests {
         assert!(!same_key(&true, &false));
         assert_eq!(hash_of(&SEED, &held), hash_of(&SEED, "red"));
         assert_eq!(hash_of(&SEED, &7u8), hash_of(&SEED, &7i64));
+        // Atoms of two kinds are two keys, and so are two sequences of atoms
+        // of two lengths.
+        assert!(!same_key(&true, &1u8));
+        assert!(!same_key(&Pair { low: 1, high: 0 }, &1u64));
+    }
+
+    /// A record is its fields' atoms in the order its schema declares them:
+    /// equal field by field, hashed as its fields' canonical bytes written one
+    /// after the other, and read past its last atom by no position.
+    #[test]
+    fn a_record_key_is_its_fields_atoms_in_order() {
+        let pair = Pair { low: 1, high: 2 };
+        assert_eq!(pair.atoms(), 2);
+        assert_eq!(pair.atom(0), KeyAtom::Integer(1));
+        assert_eq!(pair.atom(1), KeyAtom::Integer(2));
+        assert!(same_key(&pair, &Pair { low: 1, high: 2 }));
+        assert!(!same_key(&pair, &Pair { low: 2, high: 1 }));
+        let mut sip = SipHash13::new(&SEED);
+        sip.write(&1i128.to_le_bytes());
+        sip.write(&2i128.to_le_bytes());
+        assert_eq!(hash_of(&SEED, &pair), sip.finish());
+        let mut sip = SipHash13::new(&SEED);
+        sip.write(&3u64.to_le_bytes());
+        sip.write(b"red");
+        assert_eq!(hash_of(&SEED, "red"), sip.finish());
+    }
+
+    /// A record's atom is read only below its atoms.
+    #[test]
+    #[should_panic(expected = "a key's atom is read at a position below its atoms")]
+    fn a_record_has_no_atom_past_its_last() {
+        let _ = Pair { low: 1, high: 2 }.atom(2);
     }
 
     /// A record of two keys, written field by field.
@@ -2741,9 +2796,11 @@ mod tests {
     }
 
     impl MapKey for Pair {
-        fn feed_key(&self, into: &mut dyn KeyFeed) {
-            self.low.feed_key(into);
-            self.high.feed_key(into);
+        fn atoms(&self) -> usize {
+            self.low.atoms() + self.high.atoms()
+        }
+        fn atom(&self, at: usize) -> KeyAtom<'_> {
+            FieldAtoms::at(at).field(&self.low).field(&self.high).atom()
         }
     }
 
@@ -3738,33 +3795,36 @@ mod tests {
         assert!(defaulted == *map);
     }
 
-    /// A key that counts how many times it writes its bytes ([`MapKey`]),
-    /// whatever it writes them into: a hash, or a comparison with another key.
+    /// A key that counts how many times its atom is read ([`MapKey`]),
+    /// whatever reads it: a hash, or a comparison with another key.
     struct Watched<'c> {
         key: u32,
-        feeds: &'c core::cell::Cell<u32>,
+        reads: &'c core::cell::Cell<u32>,
     }
 
     impl MapKey for Watched<'_> {
-        fn feed_key(&self, into: &mut dyn KeyFeed) {
-            self.feeds.set(self.feeds.get() + 1);
-            self.key.feed_key(into);
+        fn atoms(&self) -> usize {
+            1
+        }
+        fn atom(&self, at: usize) -> KeyAtom<'_> {
+            self.reads.set(self.reads.get() + 1);
+            self.key.atom(at)
         }
     }
 
-    /// docs/adr/0108, D4 "Storage": a map with no index hashes no key. A key
-    /// writes its bytes for a [`Linear`] map only to be compared with a key the
+    /// docs/adr/0108, D4 "Storage": a map with no index hashes no key. A key's
+    /// atom is read for a [`Linear`] map only to be compared with a key the
     /// map holds, so an empty one is read, written in place, removed from and
-    /// put into without a key writing them once, and a reseed of one that
-    /// holds keys writes none of them; an [`Inline`] map, which hashes each key
-    /// it is handed, writes the key's bytes on each of the same operations.
+    /// put into without an atom read once, and a reseed of one that holds keys
+    /// reads none; an [`Inline`] map, which hashes each key it is handed, reads
+    /// the key's atom on each of the same operations.
     #[test]
     fn a_linear_map_hashes_no_key() {
-        let feeds = core::cell::Cell::new(0u32);
-        let counter = &feeds;
+        let reads = core::cell::Cell::new(0u32);
+        let counter = &reads;
         let watched = move |key: u32| Watched {
             key,
-            feeds: counter,
+            reads: counter,
         };
 
         let mut linear: BoundedMap<Watched<'_>, u8, 3, Linear> = BoundedMap::with_seed(SEED);
@@ -3774,28 +3834,28 @@ mod tests {
         assert_eq!(linear.remove(&watched(1)), RemoveOutcome::Absent);
         assert_eq!(linear.put(watched(1), 10), PutOutcome::Inserted);
         assert_eq!(
-            feeds.get(),
+            reads.get(),
             0,
             "an empty map compares no key and hashes none"
         );
         assert_eq!(linear.put(watched(2), 20), PutOutcome::Inserted);
         assert_eq!(linear.put(watched(3), 30), PutOutcome::Inserted);
-        feeds.set(0);
+        reads.set(0);
         linear.reseed(OTHER_SEED);
-        assert_eq!(feeds.get(), 0, "a reseed hashes no key");
+        assert_eq!(reads.get(), 0, "a reseed hashes no key");
         assert_eq!(linear.get(&watched(3)), Some(&30));
-        assert!(feeds.get() > 0, "a lookup compares the key with those held");
+        assert!(reads.get() > 0, "a lookup compares the key with those held");
 
         let mut inline: BoundedMap<Watched<'_>, u8, 3, Inline> = BoundedMap::with_seed(SEED);
-        feeds.set(0);
+        reads.set(0);
         assert!(inline.get(&watched(1)).is_none());
-        assert_eq!(feeds.get(), 1, "an inline map hashes the key it looks up");
+        assert_eq!(reads.get(), 1, "an inline map hashes the key it looks up");
         assert_eq!(inline.put(watched(1), 10), PutOutcome::Inserted);
         assert_eq!(inline.put(watched(2), 20), PutOutcome::Inserted);
-        feeds.set(0);
+        reads.set(0);
         inline.reseed(OTHER_SEED);
         assert_eq!(
-            feeds.get(),
+            reads.get(),
             2,
             "an inline map hashes each key it holds again"
         );

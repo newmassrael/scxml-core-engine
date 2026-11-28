@@ -60,13 +60,22 @@ pub struct {{ payload_struct_name }} {
    crate cannot, since two machines keyed by one record would each make it one.
    Empty for a payload with a field that is no key (`render_event_schema`). #}
 
-/// docs/adr/0108, D1: a payload is a key of a map by its fields, in the order
-/// its schema declares them.
+/// docs/adr/0108, D1: a payload is a key of a map by its fields' atoms, in the
+/// order its schema declares the fields.
 impl ::sce_portable_bytes::MapKey for {{ payload_struct_name }} {
-    fn feed_key(&self, into: &mut dyn ::sce_portable_bytes::KeyFeed) {
+    #[inline]
+    fn atoms(&self) -> usize {
 {% for field in rust_map_key_fields %}
-        ::sce_portable_bytes::MapKey::feed_key(&self.{{ field }}, into);
+        {% if not loop.first %}+ {% endif %}::sce_portable_bytes::MapKey::atoms(&self.{{ field }})
 {% endfor %}
+    }
+    #[inline]
+    fn atom(&self, at: usize) -> ::sce_portable_bytes::KeyAtom<'_> {
+        ::sce_portable_bytes::FieldAtoms::at(at)
+{% for field in rust_map_key_fields %}
+            .field(&self.{{ field }})
+{% endfor %}
+            .atom()
     }
 }
 {% endif %}
