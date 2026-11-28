@@ -4367,11 +4367,17 @@ buffer pool regenerates it, and one that drives a generated pool by hand changes
   `_over_slot_capacity`, `_over_slot_index`, `_over_into_index`, `_over_reclaim`, `_over_take_prefixed`, `_over_lend`,
   `_over_hold`, `_over_release`, `_over_lent` and the seam and address functions. The header's static pool keeps
   `<pool>_slot_states` and the calls before the lending. The first landing's `<pool>_init`, `<POOL>_CALLER_STORAGE` and
-  the static pool's lent calls are gone: storage the caller holds is a `<pool>_over_t`.
+  the static pool's lent calls are gone: storage the caller holds is a `<pool>_over_t`. C11: the lending form is
+  `<pool>_over.h`, which includes `<pool>.h`; a program that lends includes it (`#include "<pool>_over.h"`), and one
+  that does not includes `<pool>.h` alone, which includes, defines and declares what it did before the lending
+  (`<POOL>_SHARING`, `<pool>_slot_index_t`, `<pool>_span_t` and `<pool>_lend_refused_t` are `<pool>_over.h`'s too).
 - **C11, `shared`.** The static pool is a `<pool>_over_t` over the header's storage, its words atomic, behind the calls
-  before the lending: `<pool>_pool_acquire_for_encode(void)` lends a whole slot. It links the `sce_atomic_*`
+  before the lending: `<pool>_pool_acquire_for_encode(void)` lends a whole slot. Its `<pool>.h` includes
+  `<pool>_over.h` for that book, the one pool header that does. It links the `sce_atomic_*`
   intrinsics, or `_sce_critical_enter` and `_sce_critical_exit` on a target with no compare-and-swap.
 - **Links.** A Rust link's `send` is `send<TxP: pool::TxPool>(&mut self, tx_pool: TxP, event)`: `&mut pool` for the
   pool over its own storage, as before the lending, and `&pool` for a lending one. A C11 link's
   `<link>_send_<row>(self, value)` encodes into the static pool's whole slot as before, and
-  `<link>_send_<row>_over(self, &pool, value)` into a `<pool>_over_t`.
+  `<link>_send_<row>_over(self, &pool, value)` into a `<pool>_over_t`. The second is `<link>_over.h`'s, which includes
+  `<link>.h` and `<pool>_over.h`: `<link>.h` includes `<pool>.h` alone, so a program that sends through the static
+  pool includes nothing of the lending form; one that sends through a `<pool>_over_t` adds `#include "<link>_over.h"`.

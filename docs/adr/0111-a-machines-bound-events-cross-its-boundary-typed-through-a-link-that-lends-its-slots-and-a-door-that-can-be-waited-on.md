@@ -314,14 +314,18 @@ unchanged. The generated Rust and C11 pools gain:
   `SlotStore` (`Over<'a>`) the book and `Generation = u32`; `Slot<S, G>` carries `G`, defaulting to the handle of
   the pool over its own storage, and `SlotIndex`, `into_index`, `reclaim` and the rest are `Pool<Over<'_>>`'s. A
   program that owns storage whose slots must cross an interface by index makes `Pool::over` over a `&'static mut`
-  buffer. In C11 the header gives both: the pool over its own storage, the static one, with the functions it had
-  before the book, and `<pool>_over_t` with `<pool>_init_over` and `<pool>_over_*`; both are `static inline`, so the
-  one a program does not call costs it nothing. `<sce:sharing>shared` alone changes the pool over its own storage: a
-  driver context moves its slots too, which one state per slot cannot be shared with, so its state is the atomic book
-  (Rust: `Owned` is a `SlotStore`; C11: the static pool is a `<pool>_over_t` over the header's storage behind the
-  calls it had before the book). A link's send takes its transmit pool as its type lends: Rust through the pool's
-  `TxPool` (`&mut` the pool over its own storage, `&` the lending type), C11 by two sends, `<link>_send_<row>` and
-  `<link>_send_<row>_over`.
+  buffer. In C11 each form is a header of its own: `<pool>.h` gives the pool over its own storage, the static one,
+  with the includes, macros and functions it had before the book, and the lending form, `<pool>_over_t` with
+  `<pool>_init_over` and `<pool>_over_*`, is `<pool>_over.h`, which includes `<pool>.h`. C11: the lending form is
+  `<pool>_over.h`, and only a program that lends includes it; a unit that keeps every `static inline` it reads (a
+  footprint gate built with `-fkeep-inline-functions`) then holds nothing of a form it does not use.
+  `<sce:sharing>shared` alone changes the pool over its own storage: a driver context moves its slots too, which one
+  state per slot cannot be shared with, so its state is the atomic book (Rust: `Owned` is a `SlotStore`; C11: the
+  static pool is a `<pool>_over_t` over the header's storage behind the calls it had before the book, so a shared
+  pool's `<pool>.h` includes `<pool>_over.h`, the one pool header that does). A link's send takes its transmit pool
+  as its type lends: Rust through the pool's `TxPool` (`&mut` the pool over its own storage, `&` the lending type),
+  C11 by two sends, `<link>_send_<row>` in `<link>.h`, which includes `<pool>.h`, and `<link>_send_<row>_over` in
+  `<link>_over.h`, which includes `<link>.h` and `<pool>_over.h`.
 
 The `queue` kind takes the run-time capacity by the same rule: `CAPACITY` is the bound, and a queue is constructed
 with `c <= CAPACITY`, refused otherwise. Its full policy is unchanged (U17 is a record of its own).
@@ -461,6 +465,10 @@ The supported way for a build outside this repository to generate code is the `s
    (ADR 0154): the pool over its own storage keeps the layout and the code it had before the book, and only the
    lending type, `Over` and `<pool>_over_t`, keeps the book and the generation. The contract runs against each pool's
    lending type, and each arm holds the pool over its own storage to that layout.
+   Amended again (2026-11-28): the C11 header still held both forms, each `static inline`, and a footprint gate
+   that keeps every inline function a unit reads measured a pool's text at 3434 bytes where the header before the
+   book gave 820. The lending form is now a header of its own, `<pool>_over.h` (and a link's sends into it,
+   `<link>_over.h`), which only a program that lends includes.
 3. The link's transmit side (D3): stages, open, append and arm with their outcomes, the take order, the lending
    `Link` operation, the prefix, `tx-room`, `tx-idle`, `link-close` in both forms and `closed`, on the loopback fixtures of
    `tests/forge/conformance/link_events/`, which gain a lending driver and a batching link.

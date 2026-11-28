@@ -941,7 +941,11 @@ holder. Its book is plain cells moved by whoever holds the drive, or, for a
 `shared` pool, atomic words, each transition a compare-and-swap, or the
 deployment's critical section on a target with none (`critical-section` in Rust,
 `_sce_critical_enter` and `_sce_critical_exit` in C11); a `shared` pool's own
-storage keeps that atomic book too. An empty pool is all zero.
+storage keeps that atomic book too. An empty pool is all zero. C11: the lending
+form is `<pool>_over.h`, which includes `<pool>.h`, and only a program that
+lends includes it; `<pool>.h` includes and declares what it did before the
+book, but for a `shared` pool, whose header includes `<pool>_over.h` for its
+book. A link's sends into a `<pool>_over_t` are likewise `<link>_over.h`.
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and
