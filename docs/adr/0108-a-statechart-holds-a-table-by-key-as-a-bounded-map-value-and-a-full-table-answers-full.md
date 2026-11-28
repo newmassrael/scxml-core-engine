@@ -26,6 +26,9 @@
   and elements, ordered as ADR 0151 D2 orders a list), a member of an inductive document is no key, a put that
   replaces a present key may answer `full` when the value's nodes pass their bound, and a member that holds a map
   stands in no wire position.
+  Amended by: ADR 0086 section 16 (2026-11-28), D4 "Storage": a generated Rust machine's own map takes the storage
+  its deployment's class names, `Inline` on an `mcu` machine and `Heap` on an `ap` machine, and the default only
+  where it is generated with no deployment (section 16.3).
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
